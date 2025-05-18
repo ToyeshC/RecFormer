@@ -1,0 +1,31 @@
+# Model
+model: SASRec
+
+# Dataset
+dataset: amazon-electronics
+
+# Data loading and splitting
+USER_ID_FIELD: user_id
+ITEM_ID_FIELD: item_id
+TIME_FIELD: timestamp
+load_col:
+    inter: [user_id, item_id, rating, timestamp]
+eval_setting: TO_LS,full
+
+# Training settings
+epochs: 0
+train_neg_sample_args: ~ 
+
+# Evaluation settings
+eval_batch_size: 2048
+metrics: [Recall, NDCG, MRR, ItemCoverage]
+topk: [10]
+valid_metric: NDCG@10
+
+checkpoint_dir: saved_baselines/
+
+# Other settings
+show_progress: True
+seed: 2025
+accelerator: 'gpu'
+device_id: 0

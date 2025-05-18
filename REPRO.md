@@ -7,14 +7,18 @@ This document provides the full set of instructions to reproduce our project res
 ## 🧱 Project Structure
 
 ```bash
-.
-├── data/                   # Contains raw and processed datasets
-├── src/                    # All source code (models, training, evaluation)
-├── requirements.txt        # Python dependencies
-├── README.md               # README file
-├── REPRO.md                # This file
-├── XXXXX
-├── XXXXX
+├── recformer_reproduction_repo/  
+│   ├── recformer_env/            
+│   ├── data/                     
+│   │   └── amazon-electronics/   # Example dataset
+│   ├── job_output/               # SLURM output
+│   ├── saved_baselines/          # Checkpoints for the RecBole baseline model
+│   ├── run.py                    # Script to run RecBole
+│   ├── recbole_baseline_config.yaml # Configuration for RecBole
+│   ├── requirements.txt       
+│   ├── recformer_job.sbatch      # Example job script
+│   ├── README.md                 # Main project README
+│   └── REPRO.md             
 ```
 
 ---
@@ -27,44 +31,35 @@ Setup project by running the following commands:
 
 
 ```bash
-# Example -- overwrite if needed
-conda create -n XXXXX python=XXXX
-conda activate XXXXX
-pip install -r requirements.txt
+curl -LsSf https://astral.sh/uv/install.sh | sh
+cd recformer_reproduction_repo
+uv venv recformer_env --python 3.10
+source recformer_env/bin/activate
+uv pip sync requirements.txt
 ```
 
 ---
 
 ## 📂 Download & Prepare Datasets
 
-Place your datasets in the `XXXX/` directory.
-
-### Example Dataset
-```bash
-mkdir -p data/example_dataset
-cd data/example_dataset
-wget xxxxx
-python -m src.preprocess_example_dataset.py xxxx
-cd ../..
-```
+Datasets are downloaded by RecBole.
 
 ---
 
 ## ⚙️ Configuration
 
-Set your parameters in the config file before training. Example:
-
+Set your parameters in the config file before training.
 
 ---
 
-## 🚀 5. Training
+## 🚀 Training
 
 ### Baselines
 
 Run the following command to train the baseline:
 
 ```bash
-python XXXX
+python run.py --config_file recbole_baseline_config.yaml
 ```
 
 To perform inference:
@@ -76,7 +71,7 @@ python XXXX
 Alternatively, execute the following slurm jobs:
 
 ```bash
-sbatch job_scripts/train_xxxxx.job
+sbatch 
 sbatch job_scripts/infer_xxxxx.job
 ```
 
