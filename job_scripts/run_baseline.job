@@ -1,0 +1,24 @@
+#! /bin/bash
+#SBATCH --job-name=run_recformer_baseline
+#SBATCH --output=job_output/run_recformer_baseline_%A.out
+#SBATCH --ntasks=1
+#SBATCH --time=00:10:00
+#SBATCH --partition=gpu_a100
+#SBATCH --nodes=1
+#SBATCH --cpus-per-task=72
+
+
+
+#SBATCH --gpus=4
+NPROC=4
+
+# activate venv
+source ../recformer_env/bin/activate
+
+# Run the main script with the config file
+cd ../
+echo "Using RecBole's main script for DDP"
+python python_scripts/run.py \
+    --config_file=recbole_baseline_config.yaml \
+    --nproc=$NPROC # don't forget to set gpus_id in the config file
+
