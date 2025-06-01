@@ -1,0 +1,25 @@
+#! /bin/bash
+#SBATCH --job-name=run_recformer_baseline
+#SBATCH --output=job_output/run_recformer_baseline_%A.out
+#SBATCH --ntasks=1
+#SBATCH --time=00:05:00
+#SBATCH --partition=gpu_a100 #recbole doesn't support gpu_h100 it seems
+#SBATCH --nodes=1
+#SBATCH --cpus-per-task=32
+
+#SBATCH --gpus=4
+NPROC=4
+
+cd /home/scur0996/recformer_reproduction_repo
+# activate venv
+mkdir -p jobs/job_output
+
+source recformer_env/bin/activate
+
+# Run the main script with the config file
+echo "Using RecBole's main script for DDP"
+python python_scripts/run.py \
+    --config_file=configs/recbole_baseline_config.yaml \
+    --nproc=$NPROC # don't forget to set gpus_id in the config file
+    --mode=pretrain
+

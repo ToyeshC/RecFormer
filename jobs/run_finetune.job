@@ -1,0 +1,26 @@
+#!/bin/bash
+#SBATCH --job-name=run_recformer_finetune
+#SBATCH --output=job_output/run_recformer_finetune_%A.out
+#SBATCH --ntasks=1
+#SBATCH --time=01:00:00  # Increased time - finetuning might take longer than 5 minutes
+#SBATCH --partition=gpu_a100
+#SBATCH --nodes=1
+#SBATCH --cpus-per-task=64
+#SBATCH --gpus=4
+
+NPROC=4
+
+cd /home/scur0996/recformer_reproduction_repo
+
+# Create job_output directory if it doesn't exist
+mkdir -p jobs/job_output
+
+# Activate venv
+source recformer_env/bin/activate
+
+# Run the finetuning script
+echo "Starting finetuning with RecBole"
+python python_scripts/run.py \
+    --config_file=configs/recbole_finetune_config.yaml \
+    --nproc=$NPROC \
+    --load_model
