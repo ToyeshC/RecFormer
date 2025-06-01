@@ -1,0 +1,36 @@
+model: SASRec
+
+PAD_TOKEN: "[PAD]" 
+USER_ID_FIELD: user_id
+ITEM_ID_FIELD: item_id
+TIME_FIELD: timestamp
+load_col:
+    inter: [user_id, item_id, timestamp]
+    item: [item_id, title, categories, brand] 
+data_path: ./recbole_data/ 
+
+# --- Training Settings ---
+epochs: 50
+train_batch_size: 1024
+eval_batch_size: 512
+learning_rate: 0.001
+stopping_step: 10    # Early stopping based on valid_metric from OOD validation
+loss_type: CE        
+train_neg_sample_args: ~ 
+
+metrics: [Recall, NDCG, MRR]
+topk: [10]
+valid_metric: NDCG@10 
+
+eval_args:
+    group_by: user # Group OOD validation data by user for evaluation
+    order: TO      
+    mode: full     
+
+# --- Other settings ---
+checkpoint_dir: ./saved_baselines/SASRec-May-21-2025_01-41-00.pth 
+show_progress: True
+seed: 2025
+reproducibility: True
+gpu_id: '0,1,2,3' 
+use_gpu: True

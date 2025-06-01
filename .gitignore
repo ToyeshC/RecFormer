@@ -172,3 +172,15 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Saved model checkpoints
+saved_baselines/
+
+# Job output files
+job_output/
+
+# Model logs
+log/SASRec/
+
+# TensorBoard logs
+log_tensorboard/
