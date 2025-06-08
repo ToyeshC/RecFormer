@@ -184,3 +184,7 @@ log/SASRec/
 
 # TensorBoard logs
 log_tensorboard/
+
+
+recbole_data/
+pretrain_data/

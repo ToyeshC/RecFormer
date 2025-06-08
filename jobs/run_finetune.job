@@ -10,7 +10,7 @@
 
 NPROC=4
 
-cd /home/scur0996/recformer_reproduction_repo
+cd /home/scur2746/recformer_reproduction_repo
 
 # Create job_output directory if it doesn't exist
 mkdir -p jobs/job_output

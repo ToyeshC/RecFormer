@@ -1,0 +1,25 @@
+#! /bin/bash
+#SBATCH --job-name=run_recformer_baseline
+#SBATCH --output=job_output/run_recformer_baseline_%A.out
+#SBATCH --ntasks=1
+#SBATCH --time=00:45:00
+#SBATCH --partition=gpu_a100 #recbole doesn't support gpu_h100 it seems
+#SBATCH --nodes=1
+#SBATCH --cpus-per-task=1
+
+#SBATCH --gpus=1
+NPROC=4
+
+# activate venv
+mkdir -p jobs/job_output
+
+curl -LsSf https://astral.sh/uv/install.sh | sh
+~/.local/bin/uv venv recformer_env --python 3.10
+
+source recformer_env/bin/activate
+
+~/.local/bin/uv pip sync requirements.txt
+
+# Run the main script with the config file
+echo "Done!"
+
