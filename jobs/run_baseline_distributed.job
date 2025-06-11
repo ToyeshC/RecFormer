@@ -1,0 +1,25 @@
+#! /bin/bash
+#SBATCH --job-name=run_recformer_baseline_distributed
+#SBATCH --output=job_output/run_recformer_baseline_distributed_%A.out
+#SBATCH --ntasks=1
+#SBATCH --time=02:00:00
+#SBATCH --partition=gpu_h100
+#SBATCH --nodes=1
+#SBATCH --cpus-per-task=32
+#SBATCH --gpus=4
+
+# Create job output directory if it doesn't exist
+mkdir -p job_output
+
+# Load environment
+source recformer_env/bin/activate
+
+# Run distributed training script
+python python_scripts/run_distributed.py \
+    --config_file configs/recbole_baseline_config.yaml \
+    --model SASRec \
+    --dataset pretrain_corpus \
+    --nproc 4 \
+    --disable_flops
+
+echo "Job finished with exit code $?" 

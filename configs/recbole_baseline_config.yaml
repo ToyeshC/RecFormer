@@ -11,11 +11,19 @@ load_col:
 data_path: ./recbole_data/ 
 
 # --- Training Settings ---
+<<<<<<< HEAD
 epochs: 1 #32 #50
 train_batch_size: 1024
 eval_batch_size: 512 # 256
 learning_rate: 5e-5 #0.001
 stopping_step: 5 #10    # Early stopping based on valid_metric from OOD validation
+=======
+epochs: 1
+train_batch_size: 4096  # Increased batch size for 4 GPUs
+eval_batch_size: 512
+learning_rate: 0.001
+stopping_step: 1    # Stop training if valid_metric doesn't improve for 10 epochs.
+>>>>>>> ba92268f566fc1689c080905b92ba59c9dd3ca75
 loss_type: CE        
 train_neg_sample_args: ~ 
 
@@ -27,11 +35,30 @@ eval_args:
     group_by: user # Group OOD validation data by user for evaluation
     order: TO      
     mode: full     
+    split: {'RS': [0.8, 0.1, 0.1]}  # 80% train, 10% validation, 10% test
+
+# --- Dataset Settings ---
+# Enable caching for faster subsequent runs
+save_dataset: True
+dataset_save_path: ./recbole_data/pretrain_corpus/cached
+save_dataloaders: True
+dataloaders_save_path: ./recbole_data/pretrain_corpus/cached
+
+# Run on the full dataset by disabling filters
+filter_inter_by_user_or_item: False
+# user_inter_num_interval: [10, 100]  # Disabled for full run
+# item_inter_num_interval: [10, 100]  # Disabled for full run
+
+# --- Distributed Training Settings ---
+eval_step: 1
 
 # --- Other settings ---
-checkpoint_dir: ./saved_baselines/SASRec-May-21-2025_01-41-00.pth 
+checkpoint_dir: ./saved_baselines/sasrec_test
 show_progress: True
 seed: 2025
 reproducibility: True
 gpu_id: '0,1,2,3' # Use multiple GPUs if available
 use_gpu: True
+
+# --- H100 Compatibility Settings ---
+benchmark_filename: null  # Disable FLOP calculation to avoid H100 compatibility issues
