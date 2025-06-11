@@ -188,3 +188,4 @@ log_tensorboard/
 
 recbole_data/
 pretrain_data/
+recformer_env
