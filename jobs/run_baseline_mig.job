@@ -1,11 +1,12 @@
 #!/bin/bash
-#SBATCH --partition=gpu_mig
+#SBATCH --partition=gpu_a100
 #SBATCH --gpus=1
 #SBATCH --job-name=baseline
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
-#SBATCH --time=03:00:00
+#SBATCH --time=00:20:00
 #SBATCH --output=output_%A.out
+#SBATCH --output=job_output/run_unisrec_%A.out
 
 module purge
 module load 2024
@@ -18,9 +19,23 @@ mkdir -p jobs/job_output
 source recformer_env/bin/activate
 
 # Run the main script with the config file
-echo "Using RecBole's main script for DDP"
+# echo "Run UnisRec on Instruments dataset"
+# python python_scripts/run.py \
+#     --config_file=configs/UniSRec.yaml \
+#     --nproc=$NPROC \
+#     --model_name=UniSRec \
+#     --dataset_name=Instruments
+
+
+# echo "Run FDSA on Instruments dataset"
+# python python_scripts/run.py \
+#     --config_file=configs/FDSA.yaml \
+#     --nproc=$NPROC \
+#     --model_name=FDSA
+
+echo "Run SASRec on Instruments dataset"
 python python_scripts/run.py \
-    --config_file=configs/recbole_baseline_config.yaml \
-    --nproc=$NPROC # don't forget to set gpus_id in the config file
-    #--mode=pretrain
+    --config_file=configs/SASRec.yaml \
+    --nproc=$NPROC \
+    --model_name=SASRec
 

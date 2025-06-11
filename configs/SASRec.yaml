@@ -1,5 +1,4 @@
-model: FDSA #SASRec
-dataset: pretrain_corpus
+model: SASRec
 
 PAD_TOKEN: "[PAD]" 
 USER_ID_FIELD: user_id
@@ -11,17 +10,12 @@ load_col:
 data_path: ./recbole_data/ 
 
 # --- Training Settings ---
-epochs: 1 #32 #50
-train_batch_size: 1024
-eval_batch_size: 512 # 256
-learning_rate: 5e-5 #0.001
-stopping_step: 5 #10    # Early stopping based on valid_metric from OOD validation
+# epochs: 1 #32 #50
+# train_batch_size: 1024
+# eval_batch_size: 512 # 256
+# learning_rate: 5e-5 #0.001
+# stopping_step: 5 #10    # Early stopping based on valid_metric from OOD validation
 loss_type: CE        
-train_neg_sample_args: ~ 
-
-metrics: [Recall, NDCG, MRR]
-topk: [10]
-valid_metric: NDCG@10 
 
 eval_args:
     group_by: user # Group OOD validation data by user for evaluation

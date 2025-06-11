@@ -1,19 +1,13 @@
-from recbole.quick_start import run_recbole
+from recbole.quick_start import run_recboles
 from recbole.config import Config
-from recbole.utils import init_seed, get_model, get_trainer, init_logger, set_color
+from recbole.utils import init_seed, get_model, get_trainer
 from recbole.data import create_dataset, data_preparation
 import datetime
 import argparse
 import torch
 import numpy as np
 from collections import Counter
-import os
-import sys
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from models.unisrec import UniSRec
-from models.fdsa import FDSA
-from data.dataset import UniSRecDataset
-from logging import getLogger
+import torch.multiprocessing as mp
 
 # GiniCoefficient class
 class GiniCoefficient:
@@ -93,12 +87,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Run RecBole experiments.")
     parser.add_argument('--config_file', type=str, required=True)
     parser.add_argument('--nproc', type=int, default=1)
-    parser.add_argument('--model_name', type=str, default='')
     parser.add_argument('--load_model', action='store_true')
-    args = parser.parse_args() 
+    args = parser.parse_args()
 
-    # if args.model_name != 'UniSRec':
-    #     config = Config(config_file_list=[args.config_file]) # config is the config_obj
+    config = Config(config_file_list=[args.config_file]) # config is the config_obj
     if args.nproc > 1: config['nproc'] = args.nproc
 
     print(f"Start Time: {datetime.datetime.now()}")
@@ -231,67 +223,42 @@ if __name__ == '__main__':
             print("Skipping test evaluation and Gini calculation (not on main DDP process).")
 
     else:
-        if args.model_name != 'UniSRec' and args.model_name != 'FDSA':
-            print("Running standard RecBole experiment (Gini coefficient not calculated in this path).")
-            print(f"Using config file: {args.config_file}")
-            props = [args.config_file, 'configs/finetune.yaml']
-            # run_recbole(config_file_list=[args.config_file], config_dict={'nproc': args.nproc} if args.nproc > 1 else {}, saved=True)
-            run_recbole(model=args.model_name, config_file_list=props, config_dict={'nproc': args.nproc} if args.nproc > 1 else {}, saved=True)
-        elif args.model_name == 'UniSRec' or args.model_name == 'FDSA':
-            print("Running UniSRec experiment.")
-            print(f"Using config file: {args.config_file}")
-            props = [args.config_file, 'configs/finetune.yaml']
-            print(props)
-            config = Config(model=args.model_name, config_file_list=props)
-            init_seed(config['seed'], config['reproducibility'])
-            # logger initialization
-            init_logger(config)
-            logger = getLogger()
-            logger.info(config)
-            # dataset filtering
-            dataset = UniSRecDataset(config)
-            logger.info(dataset)
-            # dataset splitting
-            train_data, valid_data, test_data = data_preparation(config, dataset)
-            # model loading and initialization
-            if args.model_name == 'UniSRec':
-                model = UniSRec(config, train_data.dataset).to(config['device'])
-            elif args.model_name == 'FDSA':
-                model = FDSA(config, train_data.dataset).to(config['device'])
-            # Load pre-trained model
-            if args.load_model and 'pretrained_model_path' in config and config['pretrained_model_path']:
-                checkpoint = torch.load(config['pretrained_model_path'])
-                logger.info(f'Loading from {config["pretrained_model_path"]}')
-                logger.info(f'Transfer [{checkpoint["config"]["dataset"]}] -> [{dataset}]')
-                model.load_state_dict(checkpoint['state_dict'], strict=False)
-                if fix_enc:
-                    logger.info(f'Fix encoder parameters.')
-                    for _ in model.position_embedding.parameters():
-                        _.requires_grad = False
-                    for _ in model.trm_encoder.parameters():
-                        _.requires_grad = False
-            logger.info(model)
-            # trainer loading and initialization
-            trainer = get_trainer(config['MODEL_TYPE'], config['model'])(config, model)
+        print("Running standard RecBole experiment (Gini coefficient not calculated in this path).")
+        print(f"Using config file: {args.config_file}")
+        # run_recboles(config_file_list=[args.config_file], config_dict={'nproc': args.nproc} if args.nproc > 1 else {}, saved=True)
+        if args.nproc > 1:
+            print(f"Running distributed RecBole experiment with {args.nproc} processes.")
+            queue = mp.get_context('spawn').SimpleQueue()
 
-            # model training
-            best_valid_score, best_valid_result = trainer.fit(
-                train_data, valid_data, saved=True, show_progress=config['show_progress']
+            # Prepare the config dictionary to be passed to each process
+            # RecBole's run_recbole (aliased as run_recboles) expects a list of config_files
+            # and an optional config_dict for distributed settings.
+            base_config_dict_for_ddp = {
+                "nproc": args.nproc,
+                "config_file_list": [args.config_file], # The main config file
+                "queue": queue # Pass the queue for inter-process communication if needed
+            }
+
+            # The `run_recboles` function itself will internally handle setting up the DDP environment
+            # based on the config_dict. The arguments for mp.spawn should be `rank` and `config_dict`.
+            mp.spawn(
+                _run_recbole_process,
+                args=(args.model, args.dataset, args.config_file_list, kwargs),
+                nprocs=args.nproc,
+                join=True,
             )
 
-            # model evaluation
-            test_result = trainer.evaluate(test_data, load_best_model=True, show_progress=config['show_progress'])
+            # Retrieve results from the queue if desired
+            final_results = {}
+            for _ in range(queue.qsize()):
+                results = queue.get()
+                final_results.update(results)
+            print(f"Distributed experiment results: {final_results}")
 
-            logger.info(set_color('best valid ', 'yellow') + f': {best_valid_result}')
-            logger.info(set_color('test result', 'yellow') + f': {test_result}')
-
-            print({ 'best_valid_score': best_valid_score,
-                    'valid_score_bigger': config['valid_metric_bigger'],
-                    'best_valid_result': best_valid_result,
-                    'test_result': test_result})
-
-
-
+        else:
+            # Single-process execution
+            print("Running single-process RecBole experiment.")
+            run_recboles(config_file_list=[args.config_file], saved=True)
 
     end_time = datetime.datetime.now()
     print(f"--- Experiment Finished ---")

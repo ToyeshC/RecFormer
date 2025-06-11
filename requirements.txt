@@ -284,3 +284,5 @@ wheel==0.45.1
     #   nvidia-nvtx-cu11
 yarl==1.20.0
     # via aiohttp
+lightgbm
+xgboost

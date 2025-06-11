@@ -1,8 +1,8 @@
 #! /bin/bash
 #SBATCH --job-name=run_recformer_baseline
-#SBATCH --output=job_output/run_recformer_baseline_24_%A.out
+#SBATCH --output=job_output/run_recformer_baseline_FDSA_%A.out
 #SBATCH --ntasks=1
-#SBATCH --time=39:00:00
+#SBATCH --time=00:30:00
 #SBATCH --partition=gpu_a100 #recbole doesn't support gpu_h100 it seems
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=32
@@ -17,8 +17,11 @@ source recformer_env/bin/activate
 
 # Run the main script with the config file
 echo "Using RecBole's main script for DDP"
+# python python_scripts/run.py \
+#     --config_file=configs/recbole_baseline_config_FDSA.yaml \
+#     --nproc=$NPROC   
+#     # --mode=pretrain
 python python_scripts/run.py \
-    --config_file=configs/recbole_baseline_config.yaml \
-    --nproc=$NPROC # don't forget to set gpus_id in the config file
-    #--mode=pretrain
-
+    --config_file=configs/recbole_baseline_config_unisrec.yaml \
+    --nproc=$NPROC   
+# don't forget to set gpus_id in the config file
