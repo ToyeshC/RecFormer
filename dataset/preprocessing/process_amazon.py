@@ -360,6 +360,46 @@ def convert_to_atomic_files(args, train_data, valid_data, test_data):
             target_item = test_data[uid][0]
             file.write(f'{uid}\t{" ".join(item_seq)}\t{target_item}\n')
 
+def generate_split_item_files(args, split_item_dicts, features, item2index):
+    print(f"Generating .item files with fields: {features}")
+
+    # Invert item2index to get internal_index → asin
+    index2item = {v: k for k, v in item2index.items()}
+
+    dataset_full_name = amazon_dataset2fullname[args.dataset]
+    meta_file_path = os.path.join(args.input_path, 'Metadata', f'meta_{dataset_full_name}.json.gz')
+
+    # Load full metadata once into a dict
+    print("Loading metadata...")
+    asin2meta = {}
+    with gzip.open(meta_file_path, 'r') as fp:
+        for line in tqdm(fp, desc='Load metadata'):
+            data = json.loads(line)
+            asin2meta[data['asin']] = data
+
+    for split, user2items in split_item_dicts.items():
+        output_file = os.path.join(args.output_path, args.dataset, f"{args.dataset}.{split}.item")
+        os.makedirs(os.path.dirname(output_file), exist_ok=True)
+        print(f"Writing {split} split to {output_file}")
+        written = 0
+        with open(output_file, 'w') as f:
+            f.write("user_id:token\ttitle:token\tcategories:token\tbrand:token\n")
+            for uid, item_list in user2items.items():
+                for item in item_list:
+                    asin = index2item.get(int(item))
+                    if asin is None:
+                        continue
+                    meta = asin2meta.get(asin)
+                    if meta is None:
+                        continue
+                    values = []
+                    for feat in features:
+                        val = clean_text(meta.get(feat, ''))
+                        values.append(val)
+                    f.write(f"{uid}\t" + "\t".join(values) + "\n")
+                    written += 1
+        print(f"  → Total items written for {split}: {written}")
+
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -412,3 +452,14 @@ if __name__ == '__main__':
     write_text_file(item_text_list, os.path.join(args.output_path, args.dataset, f'{args.dataset}.text'))
     write_remap_index(user2index, os.path.join(args.output_path, args.dataset, f'{args.dataset}.user2index'))
     write_remap_index(item2index, os.path.join(args.output_path, args.dataset, f'{args.dataset}.item2index'))
+
+    # Generate .train.item, .valid.item, .test.item
+    generate_split_item_files(
+        args,
+        {
+            "train": train_inters,
+            "valid": valid_inters,
+            "test": test_inters
+        },
+        ["title", "categories", "brand"],
+        item2index)
