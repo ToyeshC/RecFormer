@@ -383,7 +383,7 @@ def generate_split_item_files(args, split_item_dicts, features, item2index):
         print(f"Writing {split} split to {output_file}")
         written = 0
         with open(output_file, 'w') as f:
-            f.write("user_id:token\ttitle:token\tcategories:token\tbrand:token\n")
+            f.write("item_id:token\ttitle:token_seq\tcategories:token_seq\tbrand:token\n")
             for uid, item_list in user2items.items():
                 for item in item_list:
                     asin = index2item.get(int(item))
