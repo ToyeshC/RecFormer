@@ -242,7 +242,12 @@ if __name__ == '__main__':
             print(f"Using config file: {args.config_file}")
             props = [args.config_file, 'configs/finetune.yaml']
             print(props)
-            config = Config(model=args.model_name, config_file_list=props)
+
+            if args.model_name == 'UniSRec':
+                config = Config(model=UniSRec, config_file_list=props)
+            else:
+                config = Config(model=FDSA, config_file_list=props)
+
             init_seed(config['seed'], config['reproducibility'])
             # logger initialization
             init_logger(config)

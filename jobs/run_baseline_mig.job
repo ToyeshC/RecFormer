@@ -23,19 +23,18 @@ source recformer_env/bin/activate
 # python python_scripts/run.py \
 #     --config_file=configs/UniSRec.yaml \
 #     --nproc=$NPROC \
-#     --model_name=UniSRec \
-#     --dataset_name=Instruments
+#     --model_name=UniSRec
 
 
-# echo "Run FDSA on Instruments dataset"
-# python python_scripts/run.py \
-#     --config_file=configs/FDSA.yaml \
-#     --nproc=$NPROC \
-#     --model_name=FDSA
-
-echo "Run SASRec on Instruments dataset"
+echo "Run FDSA on Instruments dataset"
 python python_scripts/run.py \
-    --config_file=configs/SASRec.yaml \
+    --config_file=configs/FDSA.yaml \
     --nproc=$NPROC \
-    --model_name=SASRec
+    --model_name=FDSA
+
+# echo "Run SASRec on Instruments dataset"
+# python python_scripts/run.py \
+#     --config_file=configs/SASRec.yaml \
+#     --nproc=$NPROC \
+#     --model_name=SASRec
 
