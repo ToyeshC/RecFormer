@@ -1,19 +1,25 @@
+import sys
+import os
+import argparse
+
+# Add project root to the Python path
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 from recbole.quick_start import run_recbole
 from recbole.config import Config
 from recbole.utils import init_seed, get_model, get_trainer, init_logger, set_color
 from recbole.data import create_dataset, data_preparation
 import datetime
-import argparse
 import torch
 import numpy as np
 from collections import Counter
-import os
-import sys
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from models.unisrec import UniSRec
 from models.fdsa import FDSA
 from data.dataset import UniSRecDataset
 from logging import getLogger
+from models.recformer.models import RecformerForSeqRec as RecFormer
 
 # GiniCoefficient class
 class GiniCoefficient:
@@ -231,74 +237,23 @@ if __name__ == '__main__':
             print("Skipping test evaluation and Gini calculation (not on main DDP process).")
 
     else:
-        if args.model_name != 'UniSRec' and args.model_name != 'FDSA':
-            print("Running standard RecBole experiment (Gini coefficient not calculated in this path).")
-            print(f"Using config file: {args.config_file}")
-            props = [args.config_file, 'configs/finetune.yaml']
-            # run_recbole(config_file_list=[args.config_file], config_dict={'nproc': args.nproc} if args.nproc > 1 else {}, saved=True)
-            run_recbole(model=args.model_name, config_file_list=props, config_dict={'nproc': args.nproc} if args.nproc > 1 else {}, saved=True)
-        elif args.model_name == 'UniSRec' or args.model_name == 'FDSA':
-            print("Running UniSRec experiment.")
-            print(f"Using config file: {args.config_file}")
-            props = [args.config_file, 'configs/finetune.yaml']
-            print(props)
+        # Define a mapping from model name strings to the imported class objects
+        model_class_map = {
+            'UniSRec': UniSRec,
+            'FDSA': FDSA,
+            'RecFormer': RecFormer
+        }
+        
+        # Look up the model class from the map.
+        # If not found, default to the model name string for RecBole's internal models.
+        model_to_run = model_class_map.get(args.model_name, args.model_name)
 
-            if args.model_name == 'UniSRec':
-                config = Config(model=UniSRec, config_file_list=props)
-            else:
-                config = Config(model=FDSA, config_file_list=props)
-
-            init_seed(config['seed'], config['reproducibility'])
-            # logger initialization
-            init_logger(config)
-            logger = getLogger()
-            logger.info(config)
-            # dataset filtering
-            dataset = UniSRecDataset(config)
-            logger.info(dataset)
-            # dataset splitting
-            train_data, valid_data, test_data = data_preparation(config, dataset)
-            # model loading and initialization
-            if args.model_name == 'UniSRec':
-                model = UniSRec(config, train_data.dataset).to(config['device'])
-            elif args.model_name == 'FDSA':
-                model = FDSA(config, train_data.dataset).to(config['device'])
-            # Load pre-trained model
-            if args.load_model and 'pretrained_model_path' in config and config['pretrained_model_path']:
-                checkpoint = torch.load(config['pretrained_model_path'])
-                logger.info(f'Loading from {config["pretrained_model_path"]}')
-                logger.info(f'Transfer [{checkpoint["config"]["dataset"]}] -> [{dataset}]')
-                model.load_state_dict(checkpoint['state_dict'], strict=False)
-                if fix_enc:
-                    logger.info(f'Fix encoder parameters.')
-                    for _ in model.position_embedding.parameters():
-                        _.requires_grad = False
-                    for _ in model.trm_encoder.parameters():
-                        _.requires_grad = False
-            logger.info(model)
-            # trainer loading and initialization
-            trainer = get_trainer(config['MODEL_TYPE'], config['model'])(config, model)
-
-            # model training
-            best_valid_score, best_valid_result = trainer.fit(
-                train_data, valid_data, saved=True, show_progress=config['show_progress']
-            )
-
-            # model evaluation
-            test_result = trainer.evaluate(test_data, load_best_model=True, show_progress=config['show_progress'])
-
-            logger.info(set_color('best valid ', 'yellow') + f': {best_valid_result}')
-            logger.info(set_color('test result', 'yellow') + f': {test_result}')
-
-            print({ 'best_valid_score': best_valid_score,
-                    'valid_score_bigger': config['valid_metric_bigger'],
-                    'best_valid_result': best_valid_result,
-                    'test_result': test_result})
-
-
-
+        print("Running standard RecBole experiment.")
+        print(f"Using config file: {args.config_file}")
+        props = [args.config_file] # Only use the specified config file
+        
+        run_recbole(model=model_to_run, config_file_list=props, config_dict={'nproc': args.nproc} if args.nproc > 1 else {}, saved=True)
 
     end_time = datetime.datetime.now()
-    print(f"--- Experiment Finished ---")
     print(f"End Time: {end_time}")
     print(f"Total Duration: {end_time - start_time}")

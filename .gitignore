@@ -192,3 +192,8 @@ log/
 saved/
 output*
 recformer_env
+datasets/
+pretrained_models/
+temp folder/
+downstream_datasets/
+best_model.bin
