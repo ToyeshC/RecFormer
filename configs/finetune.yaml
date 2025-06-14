@@ -4,6 +4,7 @@ benchmark_filename: [train, valid, test]
 alias_of_item_id: [item_id_list]
 load_col:
   inter: [user_id, item_id_list, item_id]
+  text: [item_id, text]
 train_neg_sample_args: ~
 unisrec_transform: ~
 
@@ -12,3 +13,4 @@ metrics: [HIT, Recall, NDCG, MRR]
 valid_metric: NDCG@10
 eval_batch_size: 2048
 stopping_step: 10
+epochs: 0 # 0 epochs to trigger eval immediately
