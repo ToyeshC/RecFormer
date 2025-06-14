@@ -56,7 +56,6 @@ def create_recbole_item_file(meta_data_path, output_dir, dataset_name):
     print(f"Total items processed for {dataset_name}: {processed_items}")
     return processed_items
 
-
 def create_recbole_inter_file(interaction_data_path, output_dir, dataset_name, user_id_prefix="user_"):
     """
     Creates the .inter file for RecBole.

@@ -1,5 +1,5 @@
 data_path: 'downstream_datasets/'
-dataset:  Instruments #Instruments # Scientific
+dataset: Pet #Instruments, Scientific, Arts, Office, Games Pet
 benchmark_filename: [train, valid, test]
 alias_of_item_id: [item_id_list]
 load_col:

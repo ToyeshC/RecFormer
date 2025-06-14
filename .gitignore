@@ -192,3 +192,7 @@ log/
 saved/
 output*
 recformer_env
+dataset/raw/Metadata/
+dataset/raw/Ratings/
+finetune_data/
+RESULTS/
