@@ -16,6 +16,13 @@ from data.dataset import UniSRecDataset
 from logging import getLogger
 from itertools import combinations
 
+"""
+Download dataset unisrec repo way (scientific)
+Download data for metadata and other things
+In the same folder create preprocessing
+Take utils and preprocess_amazone in that folder and run them.
+Change preprocess_amazone file
+"""
 # GiniCoefficient class
 class GiniCoefficient:
     def gini_coefficient(self, values):
@@ -90,7 +97,6 @@ def calculate_gini_for_categories_from_recs(
     print(f"Gini Coefficient ({category_field_name_in_dataset}@{k_for_gini}): {gini_val:.4f}")
     return existing_results_dict
 
-########################################################## MY ADDED CODE #################################################################
 def calculate_coverage(recommended_item_ids_tensor, total_num_items, existing_results_dict, k):
     recommended_items = recommended_item_ids_tensor.flatten().tolist()
     recommended_set = set(item_id for item_id in recommended_items if item_id > 0)
@@ -129,7 +135,87 @@ def calculate_intra_list_diversity(recommended_item_ids_tensor, item_feature_dic
     existing_results_dict[metric_name] = ild_value
     print(f"Intra-List Diversity@{k}: {ild_value:.4f}")
     return existing_results_dict
-########################################################## MY ADDED CODE #################################################################
+
+def evaluate_diversity(config, trainer, test_data, dataset_obj=None):
+    test_result = trainer.evaluate(test_data, load_best_model=True, show_progress=config['show_progress'])
+
+    model = trainer.model
+    model.eval()
+
+    print("Calculating Gini coefficient for categories (main process using separate prediction)...")
+
+    k = config['topk'][0] if isinstance(config['topk'], list) else config['topk']
+    if dataset_obj is None:
+        dataset_obj = create_dataset(config)
+
+    all_topk_item_indices_list = []
+    with torch.no_grad():
+        for batch_idx, interaction_batch in enumerate(test_data):
+            interaction = interaction_batch[0] if isinstance(interaction_batch, tuple) else interaction_batch
+            interaction = interaction.to(model.device)
+
+            if hasattr(model, 'full_sort_predict'):
+                scores = model.full_sort_predict(interaction)
+            elif hasattr(model, 'predict'):
+                scores = model.predict(interaction)
+                print(f"Warning: Using `predict()` for batch {batch_idx}, which may not be full sort.")
+            else:
+                print(f"Error: Model lacks `predict` and `full_sort_predict`. Skipping batch {batch_idx}.")
+                all_topk_item_indices_list.append(torch.empty(0, k, dtype=torch.long).cpu())
+                continue
+
+            if scores.dim() == 1:
+                if interaction[config['USER_ID_FIELD']].shape[0] == 1:
+                    scores = scores.unsqueeze(0)
+                else:
+                    print(f"Error: 1D scores but batch size > 1. Skipping batch {batch_idx}.")
+                    all_topk_item_indices_list.append(torch.empty(0, k, dtype=torch.long).cpu())
+                    continue
+
+            if scores.dim() != 2:
+                print(f"Error: Unexpected score dimension {scores.shape}. Skipping.")
+                all_topk_item_indices_list.append(torch.empty(0, k, dtype=torch.long).cpu())
+                continue
+
+            current_k = min(scores.shape[1], k)
+            if current_k == 0:
+                all_topk_item_indices_list.append(torch.empty(scores.shape[0], 0, dtype=torch.long).cpu())
+                continue
+
+            _, topk = torch.topk(scores, k=current_k, dim=1)
+            if current_k < k:
+                pad = torch.zeros((topk.shape[0], k - current_k), dtype=torch.long)
+                topk = torch.cat((topk.cpu(), pad), dim=1)
+            else:
+                topk = topk.cpu()
+
+            all_topk_item_indices_list.append(topk + 1)
+
+    # Gini / ILD / Coverage
+    if all_topk_item_indices_list:
+        valid_tensors = [t for t in all_topk_item_indices_list if t.shape[0] > 0 and t.shape[1] > 0]
+        if valid_tensors:
+            final_recs = torch.cat(valid_tensors, dim=0)
+
+            test_result = calculate_gini_for_categories_from_recs(
+                final_recs, k, dataset_obj, config, test_result
+            )
+
+            total_items = dataset_obj.item_num
+            pad_token = config['PAD_TOKEN']
+            cat_field = 'categories'
+
+            pad_id = dataset_obj.field2token_id.get(cat_field, {}).get(pad_token, 0)
+
+            item_feat_dict = {}
+            for item_id, cat_ids in enumerate(dataset_obj.item_feat[cat_field]):
+                item_feat_dict[item_id] = set(c for c in cat_ids.tolist() if c != pad_id)
+
+            test_result = calculate_coverage(final_recs, total_items, test_result, k)
+            test_result = calculate_intra_list_diversity(final_recs, item_feat_dict, test_result, k)
+
+    return test_result
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Run RecBole experiments.")
@@ -146,10 +232,7 @@ if __name__ == '__main__':
     print(f"Start Time: {datetime.datetime.now()}")
     start_time = datetime.datetime.now()
 
-
-    do_this = False
-    if do_this:
-    # if args.load_model and 'pretrained_model_path' in config and config['pretrained_model_path']:
+    if args.load_model and 'pretrained_model_path' in config and config['pretrained_model_path']:
         init_seed(config['seed'], config['reproducibility'])
         dataset_obj = create_dataset(config) 
         train_data, valid_data, test_data = data_preparation(config, dataset_obj)
@@ -279,15 +362,39 @@ if __name__ == '__main__':
         if args.model_name != 'UniSRec' and args.model_name != 'FDSA':
             print("Running standard RecBole experiment (Gini coefficient not calculated in this path).")
             print(f"Using config file: {args.config_file}")
-            props = [args.config_file, 'configs/finetune.yaml']
-            # run_recbole(config_file_list=[args.config_file], config_dict={'nproc': args.nproc} if args.nproc > 1 else {}, saved=True)
-            run_recbole(model=args.model_name, config_file_list=props, config_dict={'nproc': args.nproc} if args.nproc > 1 else {}, saved=True)
+            props = [args.config_file, 'configs/finetune.yaml']            
+            # recbole is black box so to get the model and eval with own metrics I just use trainer.fit
+            # run_recbole(model=args.model_name, config_file_list=props, config_dict={'nproc': args.nproc} if args.nproc > 1 else {}, saved=True)
+        
+            config = Config(model=args.model_name, config_file_list=props)
+            init_seed(config['seed'], config['reproducibility'])
+            init_logger(config)
+            logger = getLogger()
+            dataset = create_dataset(config)
+            train_data, valid_data, test_data = data_preparation(config, dataset)
+            model_class = get_model(args.model_name)
+            model = model_class(config, train_data.dataset).to(config['device'])
+            trainer = get_trainer(config['MODEL_TYPE'], config['model'])(config, model)
+
+            # Train the model
+            best_valid_score, best_valid_result = trainer.fit(
+                train_data, valid_data, saved=True, show_progress=config['show_progress']
+            )
+
+            # Run the shared evaluation
+            test_result = evaluate_diversity(config, trainer, test_data)
+        
         elif args.model_name == 'UniSRec' or args.model_name == 'FDSA':
             print("Running UniSRec experiment.")
             print(f"Using config file: {args.config_file}")
             props = [args.config_file, 'configs/finetune.yaml']
             print(props)
-            config = Config(model=args.model_name, config_file_list=props)
+
+            if args.model_name == 'UniSRec':
+                config = Config(model=UniSRec, config_file_list=props)
+            else:
+                config = Config(model=FDSA, config_file_list=props)
+
             init_seed(config['seed'], config['reproducibility'])
             # logger initialization
             init_logger(config)
@@ -319,148 +426,15 @@ if __name__ == '__main__':
             # trainer loading and initialization
             trainer = get_trainer(config['MODEL_TYPE'], config['model'])(config, model)
 
-            # trainer loading and initialization
-            trainer = get_trainer(config['MODEL_TYPE'], config['model'])(config, model)
-
             # model training
             best_valid_score, best_valid_result = trainer.fit(
                 train_data, valid_data, saved=True, show_progress=config['show_progress']
             )
 
-            # model evaluation
-            test_result_std_metrics = trainer.evaluate(test_data, load_best_model=True, show_progress=config['show_progress'])
+            test_result = evaluate_diversity(config, trainer, test_data)
 
-
-
-            final_model_for_gini = trainer.model
-            final_model_for_gini.eval()
-
-            print("Calculating Gini coefficient for categories (main process using separate prediction)...")
-            
-            k_for_gini_metric = config['topk'][0] if isinstance(config['topk'], list) else config['topk']
-            dataset_obj = create_dataset(config) 
-            print(" ddddddddddddddddddddddddddddddddddddddddddddddddddd")
-            print(f"dataset_obj: {dataset_obj}")
-            print(" ddddddddddddddddddddddddddddddddddddddddddddddddddd")
-            print(dir(dataset_obj))
-            print(" ddddddddddddddddddddddddddddddddddddddddddddddddddd")
-            # print(dataset_obj._load_user_or_item_feat)
-            # print(dataset_obj.get_item_feature)
-            print(dataset_obj.item_feat)
-            all_topk_item_indices_list = []
-            with torch.no_grad():
-                for batch_idx, batched_interaction_tuple_or_obj in enumerate(test_data):
-                    actual_interaction = batched_interaction_tuple_or_obj[0] if isinstance(batched_interaction_tuple_or_obj, tuple) else batched_interaction_tuple_or_obj
-                    interaction_on_device = actual_interaction.to(final_model_for_gini.device)
-                    
-                    if hasattr(final_model_for_gini, 'full_sort_predict'):
-                        scores = final_model_for_gini.full_sort_predict(interaction_on_device)
-                    elif hasattr(final_model_for_gini, 'predict'):
-                        scores = final_model_for_gini.predict(interaction_on_device)
-                        print(f"Warning (Gini): Model lacks 'full_sort_predict'. Using 'predict()'. Output shape: {scores.shape}. This may not be suitable if scores are not for all items or 1D for multi-user batches.")
-                    else:
-                        print(f"Error (Gini): Model has neither full_sort_predict nor predict method. Skipping Gini for batch {batch_idx}.")
-                        all_topk_item_indices_list.append(torch.empty(0, k_for_gini_metric, dtype=torch.long).cpu())
-                        continue
-                    
-                    if scores.dim() == 1:
-                        if interaction_on_device[config['USER_ID_FIELD']].shape[0] == 1:
-                            scores = scores.unsqueeze(0)
-                        else:
-                            print(f"Error (Gini): Scores tensor is 1D ({scores.shape}) but effective batch size is > 1. Cannot reliably perform topk. Skipping batch {batch_idx} for Gini.")
-                            all_topk_item_indices_list.append(torch.empty(0, k_for_gini_metric, dtype=torch.long).cpu())
-                            continue
-                    
-                    if scores.dim() != 2:
-                        print(f"Error (Gini): Scores tensor has unexpected dimension {scores.dim()} ({scores.shape}) after potential reshape. Expected 2D. Skipping batch {batch_idx} for Gini.")
-                        all_topk_item_indices_list.append(torch.empty(0, k_for_gini_metric, dtype=torch.long).cpu())
-                        continue
-                    
-                    if scores.shape[1] < k_for_gini_metric:
-                        print(f"Warning (Gini): Not enough items ({scores.shape[1]}) to take top {k_for_gini_metric}. Taking all available items for batch {batch_idx}.")
-                        current_k = scores.shape[1]
-                    else:
-                        current_k = k_for_gini_metric
-
-                    if current_k == 0 :
-                         all_topk_item_indices_list.append(torch.empty(scores.shape[0], 0, dtype=torch.long).cpu())
-                         continue
-
-                    _, topk_indices_batch = torch.topk(scores, k=current_k, dim=1)
-                    if current_k < k_for_gini_metric:
-                         padding = torch.zeros((topk_indices_batch.shape[0], k_for_gini_metric - current_k), dtype=torch.long)
-                         topk_indices_batch = torch.cat((topk_indices_batch.cpu(), padding), dim=1)
-
-                    all_topk_item_indices_list.append(topk_indices_batch.cpu() + 1)
-            # print(" ddddddddddddddddddddddddddddddddddddddddddddddddddd")
-            if all_topk_item_indices_list:
-                valid_tensors = [t for t in all_topk_item_indices_list if t.shape[0] > 0 and t.shape[1] > 0]
-                if valid_tensors:
-                    final_recommended_item_ids_tensor = torch.cat(valid_tensors, dim=0)
-                    test_result_std_metrics = calculate_gini_for_categories_from_recs(
-                        final_recommended_item_ids_tensor,
-                        k_for_gini_metric,
-                        dataset_obj, 
-                        config, # Pass the config object
-                        test_result_std_metrics
-                    )
-                    ########################################################## MY ADDED CODE #################################################################
-                    total_items = dataset_obj.item_num # Get total number of items for coverage
-
-                    """
-                    WHY OH WHY item_feat does not exist in dataset_obj?
-                    or categories does not exist in item_feat?
-                    Do I need to concatenate datasets MUSIC Office ETC and add categorory thingy to them?
-                    """
-
-
-                    # (copied logic from Gini function)
-                    category_field_name_in_dataset = 'categories'
-                    pad_token_str = config['PAD_TOKEN']
-                    padding_id_for_categories = 0
-
-
-                    if category_field_name_in_dataset in dataset_obj.field2token_id and \
-                    pad_token_str in dataset_obj.field2token_id[category_field_name_in_dataset]:
-                        padding_id_for_categories = dataset_obj.field2token_id[category_field_name_in_dataset][pad_token_str]
-                    else:
-                        print(f"Warning: Padding token '{pad_token_str}' not found for '{category_field_name_in_dataset}'. Defaulting padding ID to 0.")
-
-
-                    item_feature_dict = {}
-                    item_categories = dataset_obj.item_feat['categories']
-                    for item_id, category_ids in enumerate(item_categories):
-                        item_feature_dict[item_id] = set(cat for cat in category_ids.tolist() if cat != padding_id_for_categories)
-
-
-                    # Calculate Coverage
-                    test_result_std_metrics = calculate_coverage(
-                        final_recommended_item_ids_tensor,
-                        total_items,
-                        test_result_std_metrics,
-                        k_for_gini_metric
-                    )
-
-
-                    # Calculate ILD
-                    test_result_std_metrics = calculate_intra_list_diversity(
-                        final_recommended_item_ids_tensor,
-                        item_feature_dict,
-                        test_result_std_metrics,
-                        k_for_gini_metric
-                    )
-                    ########################################################## MY ADDED CODE #################################################################
-
-            logger.info(set_color('best valid ', 'yellow') + f': {best_valid_result}')
-            logger.info(set_color('test result', 'yellow') + f': {test_result_std_metrics}')
-
-            print({ 'best_valid_score': best_valid_score,
-                    'valid_score_bigger': config['valid_metric_bigger'],
-                    'best_valid_result': best_valid_result,
-                    'test_result': test_result_std_metrics})
-
-
-
+        logger.info(set_color('best valid ', 'yellow') + f': {best_valid_result}')
+        logger.info(set_color('test result', 'yellow') + f': {test_result}')
 
     end_time = datetime.datetime.now()
     print(f"--- Experiment Finished ---")
