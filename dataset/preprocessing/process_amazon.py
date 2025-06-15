@@ -360,8 +360,8 @@ def convert_to_atomic_files(args, train_data, valid_data, test_data):
             target_item = test_data[uid][0]
             file.write(f'{uid}\t{" ".join(item_seq)}\t{target_item}\n')
 
-def generate_split_item_files(args, split_item_dicts, features, item2index):
-    print(f"Generating .item files with fields: {features}")
+def generate_item_file(args, split_item_dicts, features, item2index):
+    print(f"Generating single .item file with fields: {features}")
 
     # Invert item2index to get internal_index → asin
     index2item = {v: k for k, v in item2index.items()}
@@ -377,28 +377,34 @@ def generate_split_item_files(args, split_item_dicts, features, item2index):
             data = json.loads(line)
             asin2meta[data['asin']] = data
 
-    for split, user2items in split_item_dicts.items():
-        output_file = os.path.join(args.output_path, args.dataset, f"{args.dataset}.{split}.item")
-        os.makedirs(os.path.dirname(output_file), exist_ok=True)
-        print(f"Writing {split} split to {output_file}")
-        written = 0
-        with open(output_file, 'w') as f:
-            f.write("item_id:token\ttitle:token_seq\tcategories:token_seq\tbrand:token\n")
-            for uid, item_list in user2items.items():
-                for item in item_list:
-                    asin = index2item.get(int(item))
-                    if asin is None:
-                        continue
-                    meta = asin2meta.get(asin)
-                    if meta is None:
-                        continue
-                    values = []
-                    for feat in features:
-                        val = clean_text(meta.get(feat, ''))
-                        values.append(val)
-                    f.write(f"{uid}\t" + "\t".join(values) + "\n")
-                    written += 1
-        print(f"  → Total items written for {split}: {written}")
+    # Collect all unique item indices
+    all_item_ids = set()
+    for user2items in split_item_dicts.values():
+        for item_list in user2items.values():
+            all_item_ids.update(item_list)
+
+    output_file = os.path.join(args.output_path, args.dataset, f"{args.dataset}.item")
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+    print(f"Writing all items to {output_file}")
+
+    written = 0
+    with open(output_file, 'w') as f:
+        f.write("item_id:token\ttitle:token_seq\tcategories:token_seq\tbrand:token\n")
+        for item in all_item_ids:
+            asin = index2item.get(int(item))
+            if asin is None:
+                continue
+            meta = asin2meta.get(asin)
+            if meta is None:
+                continue
+            values = []
+            for feat in features:
+                val = clean_text(meta.get(feat, ''))
+                values.append(val)
+            f.write(f"{item}\t" + "\t".join(values) + "\n")
+            written += 1
+
+    print(f"  → Total unique items written: {written}")
 
 
 def parse_args():
@@ -454,12 +460,12 @@ if __name__ == '__main__':
     write_remap_index(item2index, os.path.join(args.output_path, args.dataset, f'{args.dataset}.item2index'))
 
     # Generate .train.item, .valid.item, .test.item
-    generate_split_item_files(
+    generate_item_file(
         args,
         {
             "train": train_inters,
             "valid": valid_inters,
             "test": test_inters
         },
-        ["title", "categories", "brand"],
+        ["title", "category", "brand"],
         item2index)
