@@ -22,7 +22,7 @@ from models.recformer.models import RecformerModel, RecformerForSeqRec, Recforme
 from models.recformer.tokenization import RecformerTokenizer
 from collator import FinetuneDataCollatorWithPadding, EvalDataCollatorWithPadding
 from dataloader import RecformerDataset
-
+from dataloader_amazon import RecformerTrainDataset, RecformerEvalDataset
 
 def load_data(args):
 
@@ -235,9 +235,12 @@ def main():
                                                              tokenized_items=tokenized_items)
     eval_data_collator = EvalDataCollatorWithPadding(tokenizer, tokenized_items)
 
-    train_data = RecformerDataset(args, train, val, test, mode='train')
-    val_data = RecformerDataset(args, train, val, test, mode='val')
-    test_data = RecformerDataset(args, train, val, test, mode='test')
+    finetune_data_collator = FinetuneDataCollatorWithPadding(tokenizer, tokenized_items)
+    eval_data_collator = EvalDataCollatorWithPadding(tokenizer, tokenized_items)
+
+    train_data = RecformerTrainDataset(train, collator=finetune_data_collator)
+    val_data = RecformerEvalDataset(train, val, test, mode='val', collator=eval_data_collator)
+    test_data = RecformerEvalDataset(train, val, test, mode='test', collator=eval_data_collator)
 
     
     train_loader = DataLoader(train_data, 

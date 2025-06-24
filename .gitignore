@@ -197,3 +197,4 @@ pretrained_models/
 temp folder/
 downstream_datasets/
 best_model.bin
+finetune_data/

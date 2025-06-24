@@ -233,7 +233,7 @@ threadpoolctl==3.6.0
     # via scikit-learn
 tokenizers==0.13.3
     # via transformers
-torch==2.0.0
+torch==2.1.0
     # via
     #   recformer-reproduction-repo (pyproject.toml)
     #   deepspeed

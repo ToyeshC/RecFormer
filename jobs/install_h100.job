@@ -1,0 +1,21 @@
+#!/bin/bash
+#SBATCH --job-name=recformer_h100
+#SBATCH --output=logs/recformer_h100_%j.out
+#SBATCH --error=logs/recformer_h100_%j.err
+#SBATCH --partition=gpu_h100
+#SBATCH --gres=gpu:4
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=128G
+#SBATCH --time=24:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+
+# Load required modules
+module load 2023
+module load Python/3.10.4-GCCcore-11.3.0
+module load CUDA/12.1.1  # Match PyTorch and H100 compatibility
+
+# Activate virtual environment
+source recformer_env/bin/activate
+
+uv pip install -e .
