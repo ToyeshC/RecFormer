@@ -4,7 +4,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=32
 #SBATCH --gpus-per-node=4
-#SBATCH --mem=240G
+#SBATCH --mem=480G
 #SBATCH --time=24:00:00
 #SBATCH --partition=gpu_h100
 #SBATCH --output=job_output/finetune_recformer_mind_optimized_%j.out
@@ -34,52 +34,54 @@ python -c "import torch; print(f'PyTorch version: {torch.__version__}'); print(f
 MIND_DATA_INPUT_PATH="datasets/mind"
 MIND_DATA_OUTPUT_PATH="downstream_datasets/MIND_json"
 
-echo "=== Starting Optimized Fine-tuning ==="
+echo "=== Starting Optimized Fine-tuning (with Memory Management) ==="
 
-# --- Step 1: Process the mini-dataset ---
-echo "Processing the MIND dataset into JSON format..."
+# # --- Step 1: Process the dataset ---
+# echo "Processing the MIND dataset into JSON format..."
 
-python python_scripts/process_mind.py \
-    --input_path "$MIND_DATA_INPUT_PATH" \
-    --output_path "$MIND_DATA_OUTPUT_PATH"
+# python python_scripts/process_mind.py \
+#     --input_path "$MIND_DATA_INPUT_PATH" \
+#     --output_path "$MIND_DATA_OUTPUT_PATH"
 
-if [ $? -ne 0 ]; then
-    echo "Data processing for mini dataset failed. Exiting."
-    exit 1
-fi
+# if [ $? -ne 0 ]; then
+#     echo "Data processing for dataset failed. Exiting."
+#     exit 1
+# fi
 
-echo "MIND dataset processing complete."
+# echo "MIND dataset processing complete."
 
 # --- Step 2: Run Optimized RecFormer fine-tuning ---
 echo "Starting Optimized RecFormer fine-tuning using the MIND dataset..."
 
-# Performance optimization settings
+# Performance and Memory optimization settings
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export CUDA_LAUNCH_BLOCKING=0
-export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
+export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:256,expandable_segments:True
 
 echo "=== Training Configuration ==="
 echo "Multi-GPU: 4 H100 GPUs"
-echo "Batch size per GPU: 32 (Total effective: ~128 with gradient accumulation)"
+echo "Batch size per GPU: 16 (reduced for memory)"
+echo "Gradient accumulation: 4 (maintains effective batch size)"
+echo "Total effective batch size: 256 (16*4*4)"
 echo "Max epochs: 50 (with early stopping)"
-echo "Data workers: 16 per DataLoader"
-echo "Preprocessing workers: 32"
+echo "Data workers: 8 (reduced for memory)"
+echo "Preprocessing workers: 16 (reduced for memory)"
+echo "Memory allocation: 480GB"
 
 python python_scripts/finetune_optimized.py \
     --pretrain_ckpt pretrained_models/recformer_seqrec_ckpt.bin \
     --data_path "$MIND_DATA_OUTPUT_PATH" \
     --num_train_epochs 50 \
-    --batch_size 32 \
+    --batch_size 16 \
     --fp16 \
     --multi_gpu \
     --gpu_ids "0,1,2,3" \
     --finetune_negative_sample_size -1 \
     --verbose 1 \
-    --dataloader_num_workers 16 \
-    --preprocessing_num_workers 32 \
-    --pin_memory \
+    --dataloader_num_workers 8 \
+    --preprocessing_num_workers 16 \
     --cache_item_embeddings \
-    --gradient_accumulation_steps 2 \
+    --gradient_accumulation_steps 4 \
     --learning_rate 5e-5
 
 echo "=== Job Completion ==="
