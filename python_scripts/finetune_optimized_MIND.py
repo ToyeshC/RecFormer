@@ -449,8 +449,7 @@ def main():
     parser.add_argument('--device', type=int, default=0)
     parser.add_argument('--fp16', action='store_true')
     parser.add_argument('--fix_word_embedding', action='store_true')
-    parser.add_argument('--verbose', type=int, default=1)  # More frequent evaluation
-    parser.add_argument('--min_inter', type=int, default=0, help="Minimum number of user interactions to keep a user")
+    parser.add_argument('--verbose', type=int, default=1)
     
     # Multi-GPU settings
     parser.add_argument('--multi_gpu', action='store_true', help='Use multiple GPUs with DataParallel')
@@ -479,21 +478,6 @@ def main():
 
     train, val, test, item_meta_dict, item2id, id2item = load_data(args)
 
-    ### Filter data #############
-    print(f"Before min_inter={args.min_inter}, users count: train={len(train)}, val={len(val)}, test={len(test)}")
-    def filter_by_min_inter(user_dict, min_inter):
-        return {user: seq for user, seq in user_dict.items() if len(seq) >= min_inter}
-    # Filter train users
-    train = filter_by_min_inter(train, args.min_inter)
-
-    # Only keep val/test users who still exist in filtered train
-    valid_users = set(train.keys())
-    val = {u: val[u] for u in val if u in valid_users}
-    test = {u: test[u] for u in test if u in valid_users}
-
-    print(f"After min_inter={args.min_inter}, users count: train={len(train)}, val={len(val)}, test={len(test)}")
-    ##############################
-    
     config = RecformerConfig.from_pretrained(args.model_name_or_path)
     config.max_attr_num = 3
     config.max_attr_length = 32
@@ -535,15 +519,9 @@ def main():
                                                              tokenized_items=tokenized_items)
     eval_data_collator = EvalDataCollatorWithPadding(tokenizer, tokenized_items)
 
-    if "mind" not in args.data_path:
-        print("Amazon dataset detected, using RecformerTrainDataset and RecformerEvalDataset.")
-        train_data = RecformerTrainDataset(train, collator=finetune_data_collator)
-        val_data = RecformerEvalDataset(train, val, test, mode='val', collator=eval_data_collator)
-        test_data = RecformerEvalDataset(train, val, test, mode='test', collator=eval_data_collator)
-    else:
-        train_data = RecformerDataset(args, train, val, test, mode='train')
-        val_data = RecformerDataset(args, train, val, test, mode='val')
-        test_data = RecformerDataset(args, train, val, test, mode='test')
+    train_data = RecformerDataset(args, train, val, test, mode='train')
+    val_data = RecformerDataset(args, train, val, test, mode='val')
+    test_data = RecformerDataset(args, train, val, test, mode='test')
 
     # Memory-optimized DataLoaders
     train_loader = DataLoader(train_data, 
@@ -736,6 +714,7 @@ def main():
     categories = pd.Series(category_dict, name='categories')
 
     test_metrics = evaluate_diversity(categories, model, test_loader)
+
 
     print(f'Final Test set: {test_metrics}')
     
