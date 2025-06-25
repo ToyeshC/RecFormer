@@ -1,0 +1,108 @@
+#!/bin/bash
+#SBATCH --job-name=baselines_mind
+#SBATCH --output=job_output/baselines_mind_%A.out
+#SBATCH --ntasks=1
+#SBATCH --time=24:00:00  # Extended time for multiple models
+#SBATCH --partition=gpu_h100
+#SBATCH --nodes=1
+#SBATCH --cpus-per-task=32
+#SBATCH --gpus=4
+#SBATCH --mem=240G
+
+set -e # Exit immediately if a command exits with a non-zero status.
+
+echo "=== Job Information ==="
+echo "Job ID: $SLURM_JOB_ID"
+echo "Node: $SLURMD_NODENAME"
+echo "Start time: $(date)"
+echo "Available GPUs: $CUDA_VISIBLE_DEVICES"
+echo "Available CPUs: $SLURM_CPUS_PER_TASK"
+echo "Available Memory: $SLURM_MEM_PER_NODE"
+
+module purge
+module load 2024
+module load Anaconda3/2024.06-1
+
+# Create job_output directory if it doesn't exist
+mkdir -p jobs/job_output
+
+# Activate venv
+source recformer_env/bin/activate
+
+# Check environment
+echo "=== Environment Check ==="
+python -c "import torch; print(f'PyTorch version: {torch.__version__}'); print(f'CUDA available: {torch.cuda.is_available()}'); print(f'CUDA devices: {torch.cuda.device_count()}')"
+
+# Set up paths
+MIND_JSON_PATH="downstream_datasets/MIND_mini_json"
+MIND_RECBOLE_PATH="recbole_data/MIND"
+NPROC=4
+
+echo "=== Step 1: Convert MIND dataset to RecBole format ==="
+echo "Converting MIND dataset from $MIND_JSON_PATH to $MIND_RECBOLE_PATH"
+
+mkdir -p "$MIND_RECBOLE_PATH"
+
+python python_scripts/convert_mind_to_recbole.py \
+    --input_dir "$MIND_JSON_PATH" \
+    --output_dir "$MIND_RECBOLE_PATH" \
+    --dataset_name "MIND"
+
+if [ $? -ne 0 ]; then
+    echo "Data conversion failed. Exiting."
+    exit 1
+fi
+
+echo "=== Step 2: Run Baseline Models on MIND ==="
+
+# List of models to run
+MODELS=("SASRec" "FDSA" "UniSRec" "BERT4Rec")
+
+for MODEL in "${MODELS[@]}"; do
+    echo ""
+    echo "=== Running $MODEL on MIND dataset ==="
+    echo "Start time for $MODEL: $(date)"
+    
+    # Determine config file based on model
+    if [ "$MODEL" == "SASRec" ]; then
+        CONFIG_FILE="configs/mind_sasrec_config.yaml"
+    elif [ "$MODEL" == "FDSA" ]; then
+        CONFIG_FILE="configs/mind_fdsa_config.yaml"
+    elif [ "$MODEL" == "UniSRec" ]; then
+        CONFIG_FILE="configs/mind_unisrec_config.yaml"
+    elif [ "$MODEL" == "BERT4Rec" ]; then
+        CONFIG_FILE="configs/mind_bert4rec_config.yaml"
+    else
+        echo "Unknown model: $MODEL. Skipping."
+        continue
+    fi
+    
+    echo "Using config file: $CONFIG_FILE"
+    
+    # Run the model
+    python python_scripts/run.py \
+        --config_file="$CONFIG_FILE" \
+        --nproc=$NPROC \
+        --model_name="$MODEL"
+    
+    if [ $? -eq 0 ]; then
+        echo "$MODEL completed successfully at $(date)"
+    else
+        echo "$MODEL failed at $(date)"
+        # Continue with other models even if one fails
+    fi
+    
+    echo "=== $MODEL completed ==="
+    echo ""
+done
+
+echo "=== All baseline models completed ==="
+echo "End time: $(date)"
+echo "Results saved in respective checkpoint directories:"
+echo "- SASRec: ./saved_baselines/mind_sasrec/"
+echo "- FDSA: ./saved_baselines/mind_fdsa/"
+echo "- UniSRec: ./saved_baselines/mind_unisrec/"
+echo "- BERT4Rec: ./saved_baselines/mind/"
+
+echo "=== Job Summary ==="
+echo "Job finished with exit code: $?" 
