@@ -1,0 +1,39 @@
+model: BERT4Rec
+dataset: MIND
+data_path: ./recbole_data/
+
+PAD_TOKEN: "[PAD]" 
+USER_ID_FIELD: user_id
+ITEM_ID_FIELD: item_id
+TIME_FIELD: timestamp
+load_col:
+    inter: [user_id, item_id, timestamp]
+    item: [item_id, title, categories, brand] 
+
+# Training Settings
+epochs: 50
+train_batch_size: 512  
+eval_batch_size: 512
+learning_rate: 0.001
+stopping_step: 10
+loss_type: CE        
+train_neg_sample_args: ~ 
+
+# Lenient filtering for news recommendation
+min_user_inter_num: 2
+min_item_inter_num: 1
+filter_inter_by_user_or_item: False
+
+metrics: [Recall, NDCG, MRR]
+topk: [10, 20]
+valid_metric: NDCG@10 
+
+# Checkpoint Settings
+checkpoint_dir: ./saved_baselines/mind/
+# pretrained_model_path: ./saved_baselines/BERT4Rec-MIND.pth
+
+show_progress: True
+seed: 2025
+reproducibility: True
+gpu_id: '0,1,2,3' 
+use_gpu: True 

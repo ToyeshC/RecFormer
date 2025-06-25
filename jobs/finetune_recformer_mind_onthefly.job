@@ -1,0 +1,44 @@
+#!/bin/bash
+#SBATCH --job-name=finetune_recformer_mind_onthefly
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=32
+#SBATCH --gpus-per-node=4
+#SBATCH --mem=320G
+#SBATCH --time=24:00:00
+#SBATCH --partition=gpu_h100
+#SBATCH --output=job_output/finetune_recformer_mind_onthefly_%j.out
+
+set -e # Exit immediately if a command exits with a non-zero status.
+
+module purge
+module load 2024
+module load Anaconda3/2024.06-1
+
+# Activate virtual environment
+source recformer_env/bin/activate
+
+# --- Define paths ---
+MIND_DATA_INPUT_PATH="datasets/mind"
+MIND_DATA_OUTPUT_PATH="downstream_datasets/MIND_mini_json"
+
+echo "=== Starting On-the-Fly Fine-tuning ==="
+
+python python_scripts/finetune_onthefly.py \
+    --pretrain_ckpt pretrained_models/recformer_seqrec_ckpt.bin \
+    --data_path "$MIND_DATA_OUTPUT_PATH" \
+    --num_train_epochs 3 \
+    --batch_size 32 \
+    --gradient_accumulation_steps 2 \
+    --learning_rate 7e-5 \
+    --onthefly_batch_size 64 \
+    --fp16 \
+    --multi_gpu \
+    --gpu_ids "0,1,2,3" \
+    --finetune_negative_sample_size -1 \
+    --verbose 1 \
+    --dataloader_num_workers 16 \
+    --preprocessing_num_workers 24 \
+    --pin_memory
+
+echo "Job finished." 

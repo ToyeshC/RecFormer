@@ -1,0 +1,38 @@
+#!/bin/bash
+#SBATCH --job-name=fdsa_mind
+#SBATCH --output=job_output/fdsa_mind_%A.out
+#SBATCH --ntasks=1
+#SBATCH --time=06:00:00
+#SBATCH --partition=gpu_h100
+#SBATCH --nodes=1
+#SBATCH --cpus-per-task=16
+#SBATCH --gpus=4
+#SBATCH --mem=120G
+
+set -e # Exit immediately if a command exits with a non-zero status.
+
+echo "=== Job Information ==="
+echo "Job ID: $SLURM_JOB_ID"
+echo "Model: FDSA on MIND dataset"
+echo "Start time: $(date)"
+
+module purge
+module load 2024
+module load Anaconda3/2024.06-1
+
+# Create job_output directory if it doesn't exist
+mkdir -p jobs/job_output
+
+# Activate venv
+source recformer_env/bin/activate
+
+NPROC=4
+
+echo "=== Running FDSA on MIND dataset ==="
+python python_scripts/run.py \
+    --config_file=configs/mind_fdsa_config.yaml \
+    --nproc=$NPROC \
+    --model_name=FDSA
+
+echo "=== FDSA on MIND completed ==="
+echo "End time: $(date)" 

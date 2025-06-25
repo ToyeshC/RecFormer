@@ -196,3 +196,9 @@ dataset/raw/Metadata/
 dataset/raw/Ratings/
 finetune_data/
 RESULTS/
+datasets/
+pretrained_models/
+temp folder/
+downstream_datasets/
+best_model.bin
+finetune_data/

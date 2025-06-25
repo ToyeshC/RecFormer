@@ -16,7 +16,7 @@ NPROC=1
 # activate venv
 mkdir -p jobs/job_output
 
-source recformer_env/bin/activate
+source ../../recformer_env/bin/activate
 
 # Run the main script with the config file
 echo "Run UnisRec on Instruments dataset"
