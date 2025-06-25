@@ -1,9 +1,10 @@
-data_path: 'downstream_datasets/'
-dataset:  Instruments #Instruments # Scientific
+data_path: 'downstream/'
+dataset: Instruments #Instruments, Scientific, Arts, Office, Games, Pet
 benchmark_filename: [train, valid, test]
 alias_of_item_id: [item_id_list]
 load_col:
   inter: [user_id, item_id_list, item_id]
+  item: [item_id, categories]
 train_neg_sample_args: ~
 unisrec_transform: ~
 

@@ -8,8 +8,12 @@ from tqdm import tqdm
 from multiprocessing import Pool
 from pathlib import Path
 from argparse import ArgumentParser
+import numpy as np
+from collections import Counter
+from itertools import combinations
 from torch.utils.data import DataLoader
 from torch.cuda.amp import autocast
+import pandas as pd
 
 # Add project root to the Python path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -25,6 +29,212 @@ from models.recformer.tokenization import RecformerTokenizer
 from collator import FinetuneDataCollatorWithPadding, EvalDataCollatorWithPadding
 from dataloader import RecformerDataset
 from dataloader_amazon import RecformerTrainDataset, RecformerEvalDataset
+
+class GiniCoefficient:
+    def gini_coefficient(self, values):
+        arr = np.array(values, dtype=float)
+        if arr.sum() == 0: return 0.0
+        n = arr.size
+        if n <= 1 or np.all(arr == arr[0]): return 0.0
+        arr = np.sort(arr)
+        mu = arr.mean()
+        if mu == 0: return 0.0
+        index = np.arange(1, n + 1)
+        gini_val = (np.sum((2 * index - n - 1) * arr)) / (n * n * mu)
+        return gini_val
+
+    def calculate_list_gini(self, articles, key="category"):
+        freqs = {}
+        for art in articles:
+            val = art.get(key, None) or "UNKNOWN"
+            freqs[val] = freqs.get(val, 0) + 1
+        if not freqs: return 0.0
+        return self.gini_coefficient(list(freqs.values()))
+
+# --- Gini Calculation Function ---
+def calculate_gini_for_categories_from_recs(
+    recommended_item_ids_tensor, k_for_gini, 
+    category_dict, 
+    existing_results_dict
+):
+    padding_id_for_categories = 0 
+    all_category_tokens_in_recommendations = []
+    for user_recs_item_ids_1_indexed in recommended_item_ids_tensor:
+        for internal_item_id_1_indexed in user_recs_item_ids_1_indexed.tolist():
+            if internal_item_id_1_indexed == 0: continue
+            internal_item_id_0_indexed = internal_item_id_1_indexed - 1
+            
+            # Handle pandas Series format
+            if internal_item_id_0_indexed in category_dict.index:
+                item_specific_category_token_ids = category_dict[internal_item_id_0_indexed]
+                # Convert to list if it's not already
+                if hasattr(item_specific_category_token_ids, 'tolist'):
+                    item_specific_category_token_ids = item_specific_category_token_ids.tolist()
+                elif not isinstance(item_specific_category_token_ids, list):
+                    item_specific_category_token_ids = list(item_specific_category_token_ids)
+                
+                for cat_token_id in item_specific_category_token_ids:
+                    if cat_token_id != padding_id_for_categories:
+                        all_category_tokens_in_recommendations.append(cat_token_id)
+
+    metric_name = f'gini_categories@{k_for_gini}'
+    if not all_category_tokens_in_recommendations:
+        print(f"Warning (Gini): No valid category tokens for Gini. Setting {metric_name} to 0.0.")
+        existing_results_dict[metric_name] = 0.0
+        return existing_results_dict
+
+    category_token_counts = Counter(all_category_tokens_in_recommendations)
+    gini_calculator = GiniCoefficient()
+    gini_val = gini_calculator.gini_coefficient(list(category_token_counts.values()))
+    existing_results_dict[metric_name] = gini_val
+    print(f"Gini Coefficient (categories@{k_for_gini}): {gini_val:.4f}")
+    return existing_results_dict
+
+def calculate_coverage(recommended_item_ids_tensor, total_num_items, existing_results_dict, k):
+    recommended_items = recommended_item_ids_tensor.flatten().tolist()
+    recommended_set = set(item_id for item_id in recommended_items if item_id > 0)
+    coverage = len(recommended_set) / total_num_items
+    metric_name = f'coverage@{k}'
+    existing_results_dict[metric_name] = coverage
+    print(f"Coverage@{k}: {coverage:.4f}")
+    return existing_results_dict
+
+def jaccard_distance(set1, set2):
+    if not set1 and not set2: return 0.0
+    intersection = len(set1.intersection(set2))
+    union = len(set1.union(set2))
+    return 1 - intersection / union if union != 0 else 0.0
+
+def calculate_intra_list_diversity(recommended_item_ids_tensor, item_feature_dict, existing_results_dict, k):
+    ild_scores = []
+    for rec_list in recommended_item_ids_tensor:
+        rec_items = rec_list.tolist()
+        rec_items = [item for item in rec_items if item > 0]
+        if len(rec_items) < 2:
+            ild_scores.append(0.0)
+            continue
+
+
+        distances = []
+        for i, j in combinations(rec_items, 2):
+            feat_i = item_feature_dict.get(i - 1, set())
+            feat_j = item_feature_dict.get(j - 1, set())
+            dist = jaccard_distance(feat_i, feat_j)
+            distances.append(dist)
+        ild_scores.append(sum(distances) / len(distances) if distances else 0.0)
+   
+    ild_value = sum(ild_scores) / len(ild_scores)
+    metric_name = f'ild@{k}'
+    existing_results_dict[metric_name] = ild_value
+    print(f"Intra-List Diversity@{k}: {ild_value:.4f}")
+    return existing_results_dict
+
+def evaluate_diversity(category_dict, model, test_data):
+    # test_result = trainer.evaluate(test_data, load_best_model=True, show_progress=config['show_progress'])
+    test_result = {}
+    model.eval()
+
+    print("Calculating Gini coefficient for categories (main process using separate prediction)...")
+    
+    # Debug: Check model methods
+    print("Available model methods:", [method for method in dir(model) if 'predict' in method.lower() or 'forward' in method.lower()])
+
+    k = 10
+    # if dataset_obj is None:
+    #     dataset_obj = create_dataset(config)
+
+    all_topk_item_indices_list = []
+    with torch.no_grad():
+        for batch_idx, interaction_batch in enumerate(test_data):
+            # Handle the batch format: (input_dict, labels)
+            if isinstance(interaction_batch, tuple):
+                interaction, labels = interaction_batch
+            else:
+                interaction = interaction_batch
+                labels = None
+            
+            # Move all tensors in the interaction dict to device
+            for k_name, v in interaction.items():
+                interaction[k_name] = v.to(model.device)
+
+            # Use the forward method for RecformerForSeqRec model
+            try:
+                # Call the model's forward method to get similarity scores for all items
+                scores = model(**interaction)  # This will call forward() and return similarity scores
+                print(f"Using forward method, scores shape: {scores.shape}")
+            except Exception as e:
+                print(f"Error calling model forward: {e}")
+                all_topk_item_indices_list.append(torch.empty(0, k, dtype=torch.long).cpu())
+                continue
+
+            # print(f"Original scores shape: {scores.shape}")
+            if scores.dim() == 1:
+                scores = scores.unsqueeze(0)
+                print(f"After unsqueeze scores shape: {scores.shape}")
+
+            if scores.dim() != 2:
+                print(f"Error: Unexpected score dimension {scores.shape}. Skipping.")
+                all_topk_item_indices_list.append(torch.empty(0, k, dtype=torch.long).cpu())
+                continue
+
+            current_k = min(scores.shape[1], k)
+            if current_k == 0:
+                all_topk_item_indices_list.append(torch.empty(scores.shape[0], 0, dtype=torch.long).cpu())
+                continue
+
+            _, topk = torch.topk(scores, k=current_k, dim=1)
+            print(f"Topk shape: {topk.shape}, values: {topk[0][:5]}")  # Show first 5 values
+            
+            if current_k < k:
+                pad = torch.zeros((topk.shape[0], k - current_k), dtype=torch.long)
+                topk = torch.cat((topk.cpu(), pad), dim=1)
+            else:
+                topk = topk.cpu()
+
+            all_topk_item_indices_list.append(topk + 1)
+            
+            # Only process first few batches for debugging
+            if batch_idx >= 2:
+                break
+
+    # Gini / ILD / Coverage
+    # print(f"Number of recommendation batches: {len(all_topk_item_indices_list)}")
+    # print("Sample recommendations:", all_topk_item_indices_list[:3])
+    
+    if all_topk_item_indices_list:
+        valid_tensors = [t for t in all_topk_item_indices_list if t.shape[0] > 0 and t.shape[1] > 0]
+        if valid_tensors:
+            final_recs = torch.cat(valid_tensors, dim=0)
+            # print(f"Final recommendations shape: {final_recs.shape}")
+
+            test_result = calculate_gini_for_categories_from_recs(
+                final_recs, k, category_dict, test_result
+            )
+
+            # size of dataset
+            total_items = len(category_dict)
+
+            # get category field!!
+            pad_id = 0
+
+            item_feat_dict = {}
+            # Handle pandas Series format
+            for item_id in category_dict.index:
+                cat_ids = category_dict[item_id]
+                # Convert to list if it's not already
+                if hasattr(cat_ids, 'tolist'):
+                    cat_ids = cat_ids.tolist()
+                item_feat_dict[item_id] = set(c for c in cat_ids if c != pad_id)
+
+            test_result = calculate_coverage(final_recs, total_items, test_result, k)
+            test_result = calculate_intra_list_diversity(final_recs, item_feat_dict, test_result, k)
+        else:
+            print("No valid tensors found")
+    else:
+        print("No recommendations generated")
+
+    return test_result
+
 
 def load_data(args):
     train = read_json(os.path.join(args.data_path, args.train_file))
@@ -474,6 +684,28 @@ def main():
         model.load_state_dict(torch.load(args.ckpt, weights_only=False))
     
     test_metrics = eval(model, test_loader, args)
+
+    category_dict = {}
+    for key, val in item_meta_dict.items():
+        item_id = item2id[key]
+        category_str = val.get('category', '')
+        category_tokens = tokenizer.item_tokenize(category_str)
+        category_dict[item_id] = category_tokens
+
+    # Convert to pandas Series for consistency with RecBole's format
+    categories = pd.Series(category_dict, name='categories')
+    
+    # print("Sample category tokens for first few items:")
+    # for i in range(min(10, len(categories))):
+    #     print(f"Item {i}: {categories[i]}")
+    
+    # print(f"\nCategories Series shape: {categories.shape}")
+    # print(f"Categories Series dtype: {categories.dtype}")
+    # print(f"Sample of categories Series:")
+    # print(categories.head(10))
+
+    test_metrics = evaluate_diversity(categories, model, test_loader)
+
     print(f'Final Test set: {test_metrics}')
     
     print(f"\n=== Training Completed ===")
