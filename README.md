@@ -1,83 +1,161 @@
-# 📘 Project Title
+# RecFormer: Text-Based Sequential Recommendation
 
+This repository contains the implementation of RecFormer, a text-based sequential recommendation model, along with baseline models and evaluation scripts.
 
-## 🧑‍💻 Team Members
-- Name 1 – email@example.com  
-- Name 2 – email@example.com  
-- Name 3 – email@example.com  
+## Project Structure
 
-## 👥 Supervising TAs
-- TA Name 1 (Main Supervisor)
-- TA Name 2 (Co-supervisor)
+```
+.
+├── configs/           # Configuration files for models
+├── data/             # Data processing utilities
+├── dataset/          # Dataset storage and processing scripts
+├── jobs/             # SLURM job scripts
+├── models/           # Model implementations
+├── python_scripts/   # Main Python implementation scripts
+├── RESULTS/          # Experimental results and outputs
+├── .gitignore       # Git ignore file
+├── LICENSE          # Project license
+├── pyproject.toml   # Project configuration and dependencies
+├── REPRO.md         # Reproduction instructions
+└── requirements.txt # Python package dependencies
+```
 
+## Environment Setup
 
----
+1. Create and activate a virtual environment:
+```bash
+python -m venv recformer_env
+source recformer_env/bin/activate
+```
 
-## 🧾 Project Abstract
-_Provide a concise summary of your project, including the type of recommender system you're building, the key techniques used, and a brief two sentence summary of results._
+2. Install required packages (requirements.txt will be provided)
 
----
+## Available Models
 
-## 📊 Summary of Results
+1. **RecFormer**
+   - Text-based sequential recommendation model
+   - Supports both cached and on-the-fly item encoding
 
+2. **Baseline Models**
+   - SASRec
+   - FDSA
+   - UniSRec
 
-### Reproducability 
+## Datasets
 
-_Summarize your key reproducability findings in bullet points._
+### 1. Amazon Product Reviews
+Located in `datasets/downstream/`:
+- Arts
+- Instruments
+- Office
+- Pantry
+- Scientific
+and more...
 
-### Extensions
+Each dataset contains:
+- `*.inter`: User-item interaction data
+- `*.item2index`: Item ID to index mapping
+- `*.user2index`: User ID to index mapping
+- `*.text`: Item text data
+- `*.feat1CLS`: Feature data
 
-_Summarize your key findings about the extensions you implemented in bullet points._
+### 2. MIND (Microsoft News Dataset)
+Located in `datasets/MIND_mini/`
 
----
+## Running Experiments
 
-## 🛠️ Task Definition
-_Define the recommendation task you are solving (e.g., sequential, generative, content-based, collaborative, ranking, etc.). Clearly describe inputs and outputs._
+### 1. Running Baseline Models
 
----
+```bash
+python python_scripts/run.py \
+    --config_file=configs/<model_config>.yaml \
+    --nproc=1 \
+    --model_name=<model_name>
+```
 
-## 📂 Datasets
+Available model configurations:
+- `configs/SASRec.yaml`
+- `configs/FDSA.yaml`
+- `configs/UniSRec.yaml`
 
-_Provide the following for all datasets, including the attributes you are considering to measure things like item fairness (for example)_:
+### 2. Fine-tuning RecFormer
 
-- [ ] [Dataset Name](Link-to-dataset-DOI-or-URL)
-  - [ ] Pre-processing: e.g., Removed items with fewer than 5 interactions, and users with fewer than 5 interactions
-  - [ ] Subsets considered: e.g., Cold Start (5-10 items)
-  - [ ] Dataset size: # users, # items, sparsity:
-  - [ ] Attributes for user fairness (only include if used):
-  - [ ] Attributes for item fairness (only include if used):
-  - [ ] Attributes for group fairness (only include if used):
-  - [ ] Other attributes (only include if used):
+#### a. Cached Embeddings Approach
+```bash
+python python_scripts/finetune_optimized.py \
+    --pretrain_ckpt pretrained_models/recformer_seqrec_ckpt.bin \
+    --data_path finetune_data/<dataset> \
+    --num_train_epochs 50 \
+    --batch_size 32 \
+    --fp16 \
+    --multi_gpu \
+    --gpu_ids "0,1,2,3" \
+    --cache_item_embeddings
+```
 
----
+#### b. On-the-Fly Encoding Approach
+```bash
+python python_scripts/finetune_recformer_mind_optimized_onthefly.py \
+    --batch_size 32 \
+    --num_epochs 5 \
+    --lr 1e-4 \
+    --max_len 50 \
+    --cache_size 10000
+```
 
-## 📏 Metrics
+## SLURM Job Scripts
 
-_Explain why these metrics are appropriate for your recommendation task and what they are measuring briefly._
+The `jobs/` directory contains SLURM job scripts for different experiments:
 
-- [ ] Metric #1
-  - [ ] Description:
+1. `finetune_recformer_amazon_optimized.job`: Fine-tuning RecFormer on Amazon datasets
+   - Uses 4 H100 GPUs
+   - 240GB memory
+   - 32 CPUs
 
+2. `finetune_recformer_mind_onthefly.job`: Fine-tuning with on-the-fly encoding
+   - Uses 4 H100 GPUs
+   - 320GB memory
+   - Optimized for memory efficiency
 
----
+3. `run_baselines_mind.job`: Running baseline models on MIND dataset
+   - Supports SASRec, FDSA, and UniSRec
+   - Includes data conversion to RecBole format
 
-## 🔬 Baselines & Methods
+4. `run_baseline_mig.job` and `run_baseline_mig_diversity.job`: Running baseline models
+   - Single GPU setup
+   - Supports different baseline models
 
-_Describe each baseline, primary methods, and how they are implemented. Mention tools/frameworks used (e.g., Surprise, LightFM, RecBole, PyTorch)._
-Describe each baseline
-- [ ] [Baseline 1](Link-to-reference)
-- [ ] [Baseline 2](Link-to-reference)
+## Key Features
 
+1. **Smart Caching Strategy**
+   - LRU (Least Recently Used) cache for item embeddings
+   - Configurable cache size
+   - Dynamic encoding for cache misses
 
-### 🧠 High-Level Description of Method
+2. **Multi-GPU Support**
+   - Gradient accumulation for effective batch size control
+   - Optimized memory management
+   - FP16 training support
 
-_Explain your approach in simple terms. Describe your model pipeline: data input → embedding/representation → prediction → ranking. Discuss design choices, such as use of embeddings, neural networks, or attention mechanisms._
+3. **Custom Metrics**
+   - Standard metrics (NDCG, Recall)
+   - Gini Coefficient for recommendation diversity
 
----
+## Performance Optimization
 
-## 🌱 Proposed Extensions
+1. Memory Management:
+   - Configurable cache sizes
+   - Gradient accumulation
+   - FP16 training
 
-_List & briefly describe the extensions that you made to the original method, including extending evaluation e.g., other metrics or new datasets considered._
+2. Training Efficiency:
+   - Multi-GPU support
+   - Optimized data loading
+   - Smart caching strategies
 
+## Notes
 
-
+- For large datasets, use the on-the-fly encoding approach for better model performance
+- Adjust batch size and cache size based on available GPU memory
+- Monitor GPU memory usage when working with large datasets
+- Use gradient accumulation to maintain effective batch sizes while managing memory 
