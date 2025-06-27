@@ -24,8 +24,8 @@ loss_type: 'CE'
 
 # Training Settings
 epochs: 50
-train_batch_size: 512  
-eval_batch_size: 512
+train_batch_size: 1024  # Increased for larger dataset  
+eval_batch_size: 1024
 learning_rate: 0.001
 stopping_step: 10
 train_neg_sample_args: ~ 

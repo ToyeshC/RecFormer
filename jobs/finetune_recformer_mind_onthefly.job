@@ -5,40 +5,97 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --gpus-per-node=4
 #SBATCH --mem=320G
-#SBATCH --time=24:00:00
+#SBATCH --time=01:00:00
 #SBATCH --partition=gpu_h100
 #SBATCH --output=job_output/finetune_recformer_mind_onthefly_%j.out
 
 set -e # Exit immediately if a command exits with a non-zero status.
 
+echo "=== Job Information ==="
+echo "Job ID: $SLURM_JOB_ID"
+echo "Node: $SLURMD_NODENAME"
+echo "Start time: $(date)"
+echo "Available GPUs: $CUDA_VISIBLE_DEVICES"
+echo "Available CPUs: $SLURM_CPUS_PER_TASK"
+echo "Available Memory: $SLURM_MEM_PER_NODE"
+
 module purge
 module load 2024
 module load Anaconda3/2024.06-1
 
+# Create job_output directory if it doesn't exist
+mkdir -p job_output
+
 # Activate virtual environment
 source recformer_env/bin/activate
 
+# Check PyTorch and CUDA compatibility
+echo "=== Environment Check ==="
+python -c "import torch; print(f'PyTorch version: {torch.__version__}'); print(f'CUDA available: {torch.cuda.is_available()}'); print(f'CUDA devices: {torch.cuda.device_count()}')"
+
 # --- Define paths ---
-MIND_DATA_INPUT_PATH="datasets/mind"
-MIND_DATA_OUTPUT_PATH="downstream_datasets/MIND_mini_json"
+MIND_DATA_INPUT_PATH="datasets/MIND_mini"
+MIND_DATA_OUTPUT_PATH="datasets/downstream/MIND_mini"
+OUTPUT_DIR="output/recformer_mind_mini_onthefly"
 
-echo "=== Starting On-the-Fly Fine-tuning ==="
+echo "=== Starting On-The-Fly Fine-tuning (with Amazon Format Optimization) ==="
 
-python python_scripts/finetune_onthefly.py \
-    --pretrain_ckpt pretrained_models/recformer_seqrec_ckpt.bin \
-    --data_path "$MIND_DATA_OUTPUT_PATH" \
-    --num_train_epochs 3 \
+# --- Step 1: Convert MIND dataset to Amazon format ---
+echo "Converting MIND dataset to Amazon format for optimized on-the-fly training..."
+
+python python_scripts/convert_mind_to_amazon.py
+
+if [ $? -ne 0 ]; then
+    echo "Data conversion failed. Exiting."
+    exit 1
+fi
+
+# Check if conversion succeeded
+if [ ! -f "$MIND_DATA_OUTPUT_PATH/MIND.train.inter" ]; then
+    echo "Error: Amazon format conversion failed - training file not found!"
+    exit 1
+fi
+
+echo "MIND dataset conversion to Amazon format complete."
+
+# --- Step 2: Run On-The-Fly RecFormer fine-tuning ---
+echo "Starting On-The-Fly RecFormer fine-tuning using the converted MIND dataset..."
+
+# Performance and Memory optimization settings
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+export CUDA_LAUNCH_BLOCKING=0
+export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:256,expandable_segments:True
+
+echo "=== Training Configuration ==="
+echo "Multi-GPU: 4 H100 GPUs"
+echo "Batch size: 32"
+echo "Max epochs: 5 (on-the-fly training)"
+echo "Learning rate: 1e-4"
+echo "Max sequence length: 50"
+echo "Cache size: 10000 items"
+echo "Memory allocation: 320GB"
+echo "On-the-fly encoding with Amazon format optimization"
+
+# Create output directory
+mkdir -p "$OUTPUT_DIR"
+
+python python_scripts/finetune_recformer_mind_optimized_onthefly.py \
     --batch_size 32 \
-    --gradient_accumulation_steps 2 \
-    --learning_rate 7e-5 \
-    --onthefly_batch_size 64 \
-    --fp16 \
-    --multi_gpu \
-    --gpu_ids "0,1,2,3" \
-    --finetune_negative_sample_size -1 \
-    --verbose 1 \
-    --dataloader_num_workers 16 \
-    --preprocessing_num_workers 24 \
-    --pin_memory
+    --num_epochs 5 \
+    --lr 1e-4 \
+    --max_len 50 \
+    --cache_size 10000 \
+    --output_dir "$OUTPUT_DIR"
 
-echo "Job finished." 
+if [ $? -ne 0 ]; then
+    echo "On-the-fly fine-tuning failed. Exiting."
+    exit 1
+fi
+
+echo "=== Training Results ==="
+echo "Output directory contents:"
+ls -la "$OUTPUT_DIR"/
+
+echo "=== Job Completion ==="
+echo "End time: $(date)"
+echo "Job finished with exit code: $?" 

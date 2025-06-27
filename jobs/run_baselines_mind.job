@@ -2,7 +2,7 @@
 #SBATCH --job-name=baselines_mind
 #SBATCH --output=job_output/baselines_mind_%A.out
 #SBATCH --ntasks=1
-#SBATCH --time=24:00:00  # Extended time for multiple models
+#SBATCH --time=48:00:00  # Extended time for larger dataset and multiple models
 #SBATCH --partition=gpu_h100
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=32
@@ -34,7 +34,7 @@ echo "=== Environment Check ==="
 python -c "import torch; print(f'PyTorch version: {torch.__version__}'); print(f'CUDA available: {torch.cuda.is_available()}'); print(f'CUDA devices: {torch.cuda.device_count()}')"
 
 # Set up paths
-MIND_JSON_PATH="downstream_datasets/MIND_mini_json"
+MIND_JSON_PATH="downstream_datasets/MIND_json"
 MIND_RECBOLE_PATH="recbole_data/MIND"
 NPROC=4
 
@@ -56,7 +56,8 @@ fi
 echo "=== Step 2: Run Baseline Models on MIND ==="
 
 # List of models to run
-MODELS=("SASRec" "FDSA" "UniSRec" "BERT4Rec")
+MODELS=("SASRec" "FDSA" "UniSRec")
+# MODELS=("UniSRec")
 
 for MODEL in "${MODELS[@]}"; do
     echo ""
@@ -69,9 +70,7 @@ for MODEL in "${MODELS[@]}"; do
     elif [ "$MODEL" == "FDSA" ]; then
         CONFIG_FILE="configs/mind_fdsa_config.yaml"
     elif [ "$MODEL" == "UniSRec" ]; then
-        CONFIG_FILE="configs/mind_unisrec_config.yaml"
-    elif [ "$MODEL" == "BERT4Rec" ]; then
-        CONFIG_FILE="configs/mind_bert4rec_config.yaml"
+        CONFIG_FILE="configs/mind_unisrec_simple.yaml"
     else
         echo "Unknown model: $MODEL. Skipping."
         continue
@@ -102,7 +101,6 @@ echo "Results saved in respective checkpoint directories:"
 echo "- SASRec: ./saved_baselines/mind_sasrec/"
 echo "- FDSA: ./saved_baselines/mind_fdsa/"
 echo "- UniSRec: ./saved_baselines/mind_unisrec/"
-echo "- BERT4Rec: ./saved_baselines/mind/"
 
 echo "=== Job Summary ==="
 echo "Job finished with exit code: $?" 

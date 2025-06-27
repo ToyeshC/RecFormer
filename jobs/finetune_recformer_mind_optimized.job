@@ -36,19 +36,19 @@ MIND_DATA_OUTPUT_PATH="downstream_datasets/MIND_json"
 
 echo "=== Starting Optimized Fine-tuning (with Memory Management) ==="
 
-# # --- Step 1: Process the dataset ---
-# echo "Processing the MIND dataset into JSON format..."
+# --- Step 1: Process the dataset ---
+echo "Processing the MIND dataset into JSON format..."
 
-# python python_scripts/process_mind.py \
-#     --input_path "$MIND_DATA_INPUT_PATH" \
-#     --output_path "$MIND_DATA_OUTPUT_PATH"
+python python_scripts/process_mind.py \
+    --input_path "$MIND_DATA_INPUT_PATH" \
+    --output_path "$MIND_DATA_OUTPUT_PATH"
 
-# if [ $? -ne 0 ]; then
-#     echo "Data processing for dataset failed. Exiting."
-#     exit 1
-# fi
+if [ $? -ne 0 ]; then
+    echo "Data processing for dataset failed. Exiting."
+    exit 1
+fi
 
-# echo "MIND dataset processing complete."
+echo "MIND dataset processing complete."
 
 # --- Step 2: Run Optimized RecFormer fine-tuning ---
 echo "Starting Optimized RecFormer fine-tuning using the MIND dataset..."

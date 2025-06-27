@@ -1,6 +1,6 @@
 #!/bin/bash
-#SBATCH --job-name=unisrec_mind
-#SBATCH --output=job_output/unisrec_mind_%A.out
+#SBATCH --job-name=bert4rec_mind
+#SBATCH --output=job_output/bert4rec_mind_%A.out
 #SBATCH --ntasks=1
 #SBATCH --time=06:00:00
 #SBATCH --partition=gpu_h100
@@ -13,7 +13,7 @@ set -e # Exit immediately if a command exits with a non-zero status.
 
 echo "=== Job Information ==="
 echo "Job ID: $SLURM_JOB_ID"
-echo "Model: UniSRec on MIND dataset"
+echo "Model: BERT4Rec on MIND dataset"
 echo "Start time: $(date)"
 
 module purge
@@ -28,11 +28,11 @@ source recformer_env/bin/activate
 
 NPROC=4
 
-echo "=== Running UniSRec on MIND dataset ==="
+echo "=== Running BERT4Rec on MIND dataset ==="
 python python_scripts/run.py \
-    --config_file=configs/mind_unisrec_simple.yaml \
+    --config_file=configs/mind_bert4rec_config.yaml \
     --nproc=$NPROC \
-    --model_name=SASRec
+    --model_name=BERT4Rec
 
-echo "=== UniSRec on MIND completed ==="
+echo "=== BERT4Rec on MIND completed ==="
 echo "End time: $(date)" 

@@ -27,9 +27,9 @@ def convert_mind_interactions_to_recbole(input_file, output_file, split_name):
         user_id, item_id, interaction_type = interaction
         if user_id not in user_interactions:
             user_interactions[user_id] = []
-        # Only include positive interactions (interaction_type == 1)
-        if interaction_type == 1:
-            user_interactions[user_id].append(item_id)
+        # Include all interactions (MIND uses 0 for positive, 1 for negative)
+        # For sequential recommendation, we treat all clicked items as positive
+        user_interactions[user_id].append(item_id)
     
     # Write to RecBole format
     with open(output_file, 'w', encoding='utf-8') as f:
@@ -63,8 +63,12 @@ def convert_mind_items_to_recbole(meta_file, smap_file, output_file):
     # Create reverse mapping from item_id to internal_id
     id_to_item = {v: k for k, v in smap.items()}
     
-    with open(output_file, 'w', encoding='utf-8') as f:
-        f.write("item_id:token\ttitle:token_seq\tcategories:token_seq\tbrand:token\n")
+    import csv
+    
+    with open(output_file, 'w', encoding='utf-8', newline='') as f:
+        writer = csv.writer(f, delimiter='\t', quoting=csv.QUOTE_MINIMAL)
+        # Write header
+        writer.writerow(['item_id:token', 'title:token_seq', 'categories:token_seq', 'brand:token'])
         
         total_items = 0
         for internal_id in range(len(smap)):
@@ -72,11 +76,16 @@ def convert_mind_items_to_recbole(meta_file, smap_file, output_file):
                 item_key = id_to_item[internal_id]
                 if item_key in metadata:
                     item_data = metadata[item_key]
-                    title = item_data.get('text', '').replace('\t', ' ').replace('\n', ' ')
+                    # Clean and truncate the title text to avoid CSV parsing issues
+                    title = item_data.get('text', '')
+                    title = title.replace('\t', ' ').replace('\n', ' ').replace('\r', ' ')
+                    # Truncate very long titles to 200 characters to avoid parsing issues
+                    title = title[:200] if len(title) > 200 else title
+                    title = title.strip()
                     # For news articles, we don't have categories/brand, so use empty strings
                     categories = ""
                     brand = ""
-                    f.write(f"{internal_id}\t{title}\t{categories}\t{brand}\n")
+                    writer.writerow([internal_id, title, categories, brand])
                     total_items += 1
     
     print(f"Converted {total_items} items")

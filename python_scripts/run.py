@@ -7,6 +7,16 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
+# Fix PyTorch 2.6+ weights_only compatibility issue with RecBole
+import torch
+# Temporarily patch torch.load to use weights_only=False for RecBole compatibility
+original_torch_load = torch.load
+def patched_torch_load(*args, **kwargs):
+    if 'weights_only' not in kwargs:
+        kwargs['weights_only'] = False
+    return original_torch_load(*args, **kwargs)
+torch.load = patched_torch_load
+
 from recbole.quick_start import run_recbole
 from recbole.config import Config
 from recbole.utils import init_seed, get_model, get_trainer, init_logger, set_color
@@ -103,12 +113,18 @@ if __name__ == '__main__':
     parser.add_argument('--load_model', action='store_true')
     args = parser.parse_args() 
 
-    # if args.model_name != 'UniSRec':
-    #     config = Config(config_file_list=[args.config_file]) # config is the config_obj
-    if args.nproc > 1: config['nproc'] = args.nproc
-
     print(f"Start Time: {datetime.datetime.now()}")
     start_time = datetime.datetime.now()
+    
+    # Check if this is a custom model that needs special handling
+    # Note: UniSRec is actually a RecBole built-in model, only FDSA and RecFormer are truly custom
+    custom_models = ['FDSA', 'RecFormer']
+    is_custom_model = args.model_name in custom_models
+
+    # Create config object only for fine-tuning mode (load_model) or non-custom models
+    if args.load_model or not is_custom_model:
+        config = Config(config_file_list=[args.config_file]) # config is the config_obj
+        if args.nproc > 1: config['nproc'] = args.nproc
 
     if args.load_model and 'pretrained_model_path' in config and config['pretrained_model_path']:
         init_seed(config['seed'], config['reproducibility'])
@@ -252,7 +268,12 @@ if __name__ == '__main__':
         print(f"Using config file: {args.config_file}")
         props = [args.config_file] # Only use the specified config file
         
-        run_recbole(model=model_to_run, config_file_list=props, config_dict={'nproc': args.nproc} if args.nproc > 1 else {}, saved=True)
+        # For custom models, let run_recbole create the config to avoid validation issues
+        config_dict = {'nproc': args.nproc} if args.nproc > 1 else {}
+        if is_custom_model:
+            print(f"Running custom model: {args.model_name}")
+        
+        run_recbole(model=model_to_run, config_file_list=props, config_dict=config_dict, saved=True)
 
     end_time = datetime.datetime.now()
     print(f"End Time: {end_time}")

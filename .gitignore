@@ -202,3 +202,5 @@ temp folder/
 downstream_datasets/
 best_model.bin
 finetune_data/
+temp_scripts/
+best_model_5.bin
